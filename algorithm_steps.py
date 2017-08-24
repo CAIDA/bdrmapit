@@ -1,16 +1,13 @@
-from argparse import ArgumentParser
 from collections import defaultdict, Counter, namedtuple
 from logging import getLogger
 
 import numpy as np
-import sys
 
 from create_objs_container import NodesContainerDict
 from edge import Priority, Type
 from utils.progress import Progress
 from updates_dict import Updates
-from utils.utils import max_num, unique_everseen
-from verify import VerifyBaseContainer
+from utils.utils import max_num
 
 log = getLogger()
 bgp = None
