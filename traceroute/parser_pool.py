@@ -13,7 +13,7 @@ import pandas as pd
 
 import bgp.routing_table as rt
 from traceroute.warts import Warts
-from utils.utils import ls
+from utils.utils import ls, File2
 
 log = getLogger()
 log.setLevel(INFO)
@@ -379,13 +379,19 @@ def main():
     parser.add_argument('-b', '--addr', action='store_true', help='Addresses output file.')
     parser.add_argument('-d', '--dp', action='store_true', help='Dest pairs output file.')
     parser.add_argument('-e', '--dist', action='store_true', help='Distances between interfaces.')
-    parser.add_argument('-f', '--files', required=True, help='Unix-style file regex.')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-f', '--files', help='Unix-style file regex.')
+    group.add_argument('-F', '--file-list', help='File containing traceroute filenames, one per line.')
     parser.add_argument('-k', '--keep', action='store_true', help='Keep the intermediate files.')
     parser.add_argument('-o', '--output-dir', default='.', help='Directory where the output files will be written.')
     parser.add_argument('-p', '--poolsize', default=1, type=int, help='Number of parallel processes.')
     parser.add_argument('-i', '--ip2as', required=True, help='BGP prefix file regex to use.')
     args = parser.parse_args()
-    files = list(ls(args.files))
+    if args.files:
+        files = list(ls(args.files))
+    else:
+        with File2(args.file_list) as f:
+            files = list(map(str.strip, f))
     log.info('Number of files {:,d}'.format(len(files)))
     ip2as = rt.RoutingTable.ip2as(args.ip2as)
     run(files, args.poolsize)
