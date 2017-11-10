@@ -1,6 +1,14 @@
 # bdrmapIT
 This is the code to run bdrmapIT. There are a lot of files but only a few need to be run from the command line.
 
+To run bordermap it, you can use virtualenv
+> virtualenv run
+> cd run
+
+This will install the libraries you need
+> source bin/activate
+> pip install -r  ../requirememts.txt
+
 ## Generating IP-to-AS Mappings
 The first step is to generate the IP-to-AS mappings by combining BGP announcements, RIR extended delegation files, and IXP addresses. The simplest way, and the way I've been doing it, is to use the [ip2as](ip2as.md) file. The usage instructions are in that file.
 
