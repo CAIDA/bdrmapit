@@ -1,21 +1,19 @@
 import bz2
 import gzip
 import json
+import logging
 import pickle
 import signal
-from socket import inet_ntoa, inet_aton
+import subprocess
 from itertools import filterfalse
+from multiprocessing import cpu_count
+from socket import inet_ntoa, inet_aton
 from struct import pack, unpack
+from subprocess import Popen, PIPE
 from sys import stderr
 from time import sleep
 
-import logging
 import numpy as np
-from subprocess import Popen, PIPE, STDOUT, DEVNULL
-
-import subprocess
-from ipyparallel import Client
-from multiprocessing import cpu_count
 
 log = logging.getLogger()
 
@@ -41,7 +39,6 @@ class File2:
 
 
 def decompresses_or_first(files):
-    # print(files)
     for filename in files:
         if not (filename.endswith('.bz2') or filename.endswith('.gz')):
             return filename
@@ -155,16 +152,8 @@ def stop_cluster(verbose=True):
     sleep(2)
 
 
-def setup_parallel():
-    rc = Client()
-    dv = rc[:]
-    lv = rc.load_balanced_view()
-    return dv, lv
-
-
 def ls(fregex):
     p = Popen('/bin/bash -c "ls -1 {}"'.format(fregex), shell=True, universal_newlines=True, stdout=PIPE)
-    # p = Popen('/bin/bash -c "find {}"'.format(fregex), shell=True, universal_newlines=True, stdout=PIPE)
     for line in p.stdout:
         yield line.strip()
 
