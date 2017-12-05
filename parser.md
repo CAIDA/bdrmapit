@@ -8,8 +8,8 @@ The script runs fast on that machine, but it might be significantly slower with 
 |Field|Required|Description|Default|
 |---|---|---|---|
 |-i, --ip2as|Yes|The output file produced by the ip2as.py script.|None|
-|-f, --files|Yes, or -F option|Unix-style regex indicating the traceroute files.|None|
-|-F, --file-list|Yes, or -f option|Filename of file containing the traceroute filenames, one per line.|None|
+|-W, --warts|No|Filename of a file containing Warts traceroute filenames, one per line.|None|
+|-A, --atlas|No|Filename of a file containing Atlas traceroute filenames, one per line.|None|
 |-o, --output-dir|No|Directory where output files will be written. The intermediate files will also be written here.|Current directory|
 |-k, --keep|No|Indicates that the intermediate files should not be deleted.|False|
 |-p, --poolsize|No|Number of processes to use when processing the traceroute files. Each process will work on a file at a time.|1|
@@ -19,8 +19,8 @@ The script runs fast on that machine, but it might be significantly slower with 
 |-e, --dist|No|Extract the distances. Will be written to dist.csv.|False|
 
 ## Notes
-* When specifying filenames with the -f or -F option, they should either be absolute or relative to the current directory.
-* The traceroute warts files can be uncompressed, compressed with gzip (having a filename ending in .gz), or compressed with bzip (having a filename ending in .bz2).
+* When specifying filenames with the -W or -A option, they should either be absolute or relative to the current directory.
+* The traceroute files can be uncompressed, compressed with gzip (having a filename ending in .gz), or compressed with bzip (having a filename ending in .bz2).
 * Each process in the pool processes a traceroute file at a time.
 The intermediate results from that file are written to the hard drive.
 There is a deditated process (one for each -abde option) that combines the intermediate results by reading the intermediate files, and then deleting them if the -k option is not used.
