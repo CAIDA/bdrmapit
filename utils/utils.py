@@ -3,15 +3,10 @@ import gzip
 import json
 import logging
 import pickle
-import signal
-import subprocess
 from itertools import filterfalse
-from multiprocessing import cpu_count
 from socket import inet_ntoa, inet_aton
 from struct import pack, unpack
 from subprocess import Popen, PIPE
-from sys import stderr
-from time import sleep
 
 import numpy as np
 
@@ -130,26 +125,6 @@ def save_pickle(filename, obj):
 def save_json(filename, obj):
     with open(filename, 'w') as f:
         json.dump(obj, f)
-
-
-def create_cluster(nodes, stop=False):
-    if stop:
-        stop_cluster()
-    if nodes == 0:
-        nodes = cpu_count() - 1
-    p = Popen('ipcluster start -n {}'.format(nodes), universal_newlines=True, stderr=PIPE, shell=True)
-    signal.signal(signal.SIGTERM, stop_cluster)
-    for line in p.stderr:
-        stderr.write(line)
-        if 'Engines appear to have started successfully' in line:
-            return p
-
-
-def stop_cluster(verbose=True):
-    p = subprocess.run('ipcluster stop', shell=True, universal_newlines=True, stderr=PIPE)
-    if verbose:
-        stderr.write(p.stderr)
-    sleep(2)
 
 
 def ls(fregex):
