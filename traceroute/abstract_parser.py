@@ -194,18 +194,20 @@ class WartsTrace(AbstractTrace):
     def _create_hopslist(self):
         trace = np.full(self.j['hop_count'], fill_value=np.nan, dtype='object')
         hopslist = []
-        for hop in self.j['hops']:
-            address = hop['addr']
-            ttl = hop['probe_ttl'] - 1
-            if pd.isnull(trace[ttl]):
-                asn = ip2as[address]
-                hop['asn'] = asn
-                trace[ttl] = address
-                h = Hop(address, asn, ttl, hop['reply_ttl'], qttl=hop.get('icmp_q_ttl', 1), icmp_type=hop['icmp_type'])
-                hopslist.append(h)
-            elif trace[ttl] and trace[ttl] != address:
-                trace[ttl] = False
-                hopslist.pop()
+        hops = self.j.get('hops')
+        if hops:
+            for hop in hops:
+                address = hop['addr']
+                ttl = hop['probe_ttl'] - 1
+                if pd.isnull(trace[ttl]):
+                    asn = ip2as[address]
+                    hop['asn'] = asn
+                    trace[ttl] = address
+                    h = Hop(address, asn, ttl, hop['reply_ttl'], qttl=hop.get('icmp_q_ttl', 1), icmp_type=hop['icmp_type'])
+                    hopslist.append(h)
+                elif trace[ttl] and trace[ttl] != address:
+                    trace[ttl] = False
+                    hopslist.pop()
         return hopslist
 
     @property
