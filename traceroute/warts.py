@@ -18,14 +18,14 @@ class Warts:
         else:
             self.p = self.p = Popen('sc_warts2json {}'.format(self.filename), shell=True, stdout=PIPE,
                                     universal_newlines=True)
-        if json:
+        if self.json:
             for line in self.p.stdout:
                 try:
                     yield json.loads(line)
                 except json.JSONDecodeError:
                     pass
         else:
-            return self.p.stdout
+            yield from self.p.stdout
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.p.kill()

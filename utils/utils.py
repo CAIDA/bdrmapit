@@ -1,21 +1,14 @@
 import bz2
 import gzip
 import json
-import pickle
-import signal
-from socket import inet_ntoa, inet_aton
-from itertools import filterfalse
-from struct import pack, unpack
-from sys import stderr
-from time import sleep
-
 import logging
-import numpy as np
-from subprocess import Popen, PIPE, STDOUT, DEVNULL
+import pickle
+from itertools import filterfalse
+from socket import inet_ntoa, inet_aton
+from struct import pack, unpack
+from subprocess import Popen, PIPE
 
-import subprocess
-from ipyparallel import Client
-from multiprocessing import cpu_count
+import numpy as np
 
 log = logging.getLogger()
 
@@ -41,7 +34,6 @@ class File2:
 
 
 def decompresses_or_first(files):
-    # print(files)
     for filename in files:
         if not (filename.endswith('.bz2') or filename.endswith('.gz')):
             return filename
@@ -135,36 +127,8 @@ def save_json(filename, obj):
         json.dump(obj, f)
 
 
-def create_cluster(nodes, stop=False):
-    if stop:
-        stop_cluster()
-    if nodes == 0:
-        nodes = cpu_count() - 1
-    p = Popen('ipcluster start -n {}'.format(nodes), universal_newlines=True, stderr=PIPE, shell=True)
-    signal.signal(signal.SIGTERM, stop_cluster)
-    for line in p.stderr:
-        stderr.write(line)
-        if 'Engines appear to have started successfully' in line:
-            return p
-
-
-def stop_cluster(verbose=True):
-    p = subprocess.run('ipcluster stop', shell=True, universal_newlines=True, stderr=PIPE)
-    if verbose:
-        stderr.write(p.stderr)
-    sleep(2)
-
-
-def setup_parallel():
-    rc = Client()
-    dv = rc[:]
-    lv = rc.load_balanced_view()
-    return dv, lv
-
-
 def ls(fregex):
     p = Popen('/bin/bash -c "ls -1 {}"'.format(fregex), shell=True, universal_newlines=True, stdout=PIPE)
-    # p = Popen('/bin/bash -c "find {}"'.format(fregex), shell=True, universal_newlines=True, stdout=PIPE)
     for line in p.stdout:
         yield line.strip()
 

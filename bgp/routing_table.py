@@ -1,20 +1,18 @@
 import csv
+import os.path
+import re
 from argparse import ArgumentParser, FileType
 from collections import Counter, defaultdict
 from glob import glob
 from itertools import chain
-import os.path
-import sys
 
 import numpy as np
 import pandas as pd
-import re
 from radix import Radix
 
 import rir as rirfuncts
-from as2org import AS2Org
 from bgp.bgp import BGP
-from utils.utils import infer_compression, max_num, File2, unique_everseen, decompresses_or_first, ls
+from utils.utils import max_num, File2, unique_everseen, decompresses_or_first, ls
 
 PRIVATE4 = ['0.0.0.0/8', '10.0.0.8/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
             '192.0.0.0/24', '192.0.2.0/24', '192.31.196.0/24', '192.52.193.0/24', '192.88.99.0/24', '192.168.0.0/16',
@@ -48,7 +46,7 @@ class RoutingTable(Radix):
     @classmethod
     def ip2as(cls, filename):
         rt = cls()
-        with open(filename) as f:
+        with File2(filename) as f:
             f.readline()
             for prefix, asn in csv.reader(f):
                 rt.add_prefix(int(asn), prefix)

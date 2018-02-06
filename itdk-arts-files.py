@@ -40,20 +40,44 @@ __email__ = "<bhuffake@caida.org>"
 # CALIFORNIA HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES,
 # ENHANCEMENTS, OR MODIFICATIONS.
 import os, re, sys
+import bz2
 
 def main():
     if len(sys.argv) < 2:
-        print sys.argv[0]," ixp_prefix.merged.txt > ixp_prefixes.txt"
+        print (sys.argv[0]," itdk-nodes-file ")
+        print ("    used to pull out the warts files from")
         sys.exit(-1)
     process(sys.argv[1])
 
 
 def process(filename):
-    re_prefix = re.compile("^(\d+\.\d+\.\d+\.\d+\/\d+)")
-    with open(filename) as fin:
-        for line in fin:
-            match = re_prefix.search(line)
-            if match:
-                print match.group(1)
+
+    re_prefix = re.compile("#\s+-P\s+([^\s]+warts.gz)")
+    re_comment = re.compile("^#");
+
+    if re.search("bz2$", filename): 
+        with open(filename,"rb") as fin:
+            de = bz2.BZ2Decompressor()
+            line = ""
+            for data in iter(lambda : fin.read(100 * 1024), b''):
+                decompressed = de.decompress(data)
+                if decompressed:
+                    for char in list(decompressed.decode('ascii')):
+                        line = line + char
+                        if char is '\n':
+                            process_line(line, re_prefix, re_comment)
+                            line = ""
+            process_line(line, re_prefix, re_comment)
+    else:
+        with open(filename) as fin:
+            for line in fin:
+                process_line(line, re_prefix, re_comment)
+
+def process_line(line, re_prefix, re_comment):
+    match = re_prefix.search(line)
+    if match:
+        print (match.group(1))
+    if not re_comment.search(line):
+        sys.exit()
 
 main()
