@@ -39,8 +39,8 @@ def Convert(filename):
             asn = row['ASN']
             if nid_current != nid:
                 print "node.AS",nid,asn
-            elif asn != asn:
-                sys.stderr.write(filename+"["+linenum+"] node N"+nid+" multiple ASN values "+asn+", "+asn_current+"\n")
+            elif asn != asn_current:
+                sys.stderr.write(filename+"["+str(linenum)+"] node N"+nid+" multiple ASN values "+asn+", "+asn_current+"\n")
             nid_current = nid
             asn_current = asn
             linenum += 1
