@@ -9,32 +9,6 @@ import pandas as pd
 from utils.progress import Progress
 
 
-# def extract_origin(filename, increment=1000000, chunksize=10000):
-#     c = Counter()
-#     r = re.compile(r'(\d+\.\d+\.\d+\.\d+)/(\d+)')
-#     with RIB(filename) as f:
-#     # with open(filename) as f:
-#         for line in f:
-#             fields = line.split('|', 7)
-#             prefix, path = fields[5:7]
-#             if prefix and path:
-#                 m = r.match(prefix)
-#                 if m:
-#                     origin = path.rpartition(' ')[-1]
-#                     if origin[0] == '{':
-#                         if ',' not in origin:
-#                             origin = origin[1:-1]
-#                         else:
-#                             continue
-#                     origin = int(origin)
-#                     if 0 < origin < 64496 or 131071 < origin < 4200000000:
-#                         address, prefixlen = m.groups()
-#                         prefixlen = int(prefixlen)
-#                         if 0 < prefixlen <= 24:
-#                             c[(address, prefixlen, origin)] += 1
-#     return c
-
-
 def extract_origin(filename, increment=1000000, chunksize=10000):
     c = Counter()
     r = re.compile(r'(\d+\.\d+\.\d+\.\d+)/(\d+)')

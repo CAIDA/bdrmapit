@@ -13,8 +13,8 @@ import numpy as np
 log = logging.getLogger()
 
 
-class File2:
-    def __init__(self, filename, compression='infer', read=True):
+cdef class File2:
+    def __init__(self, str filename, str compression='infer', bint read=True):
         self.filename = filename
         self.compression = infer_compression(filename) if compression == 'infer' else compression
         self.read = read
@@ -33,14 +33,45 @@ class File2:
         return False
 
 
-def decompresses_or_first(files):
-    for filename in files:
-        if not (filename.endswith('.bz2') or filename.endswith('.gz')):
-            return filename
-    return files[0]
+cdef class DictDefault(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.finalized = False
+
+    cpdef void finalize(self) except *:
+        self.finalized = True
+
+    cpdef void unfinalize(self) except *:
+        self.finalized = False
 
 
-def infer_compression(filename, default=None):
+cdef class DictSet(DictDefault):
+    def __missing__(self, key):
+        cdef set newset = set()
+        if not self.finalized:
+            self[key] = newset
+        return newset
+
+
+cdef class DictInt(DictDefault):
+    def __missing__(self, key):
+        cdef int i = 0
+        if not self.finalized:
+            self[key] = i
+        return i
+
+cdef class DictList(DictDefault):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __missing__(self, key):
+        cdef list lst = []
+        if not self.finalized:
+            self[key] = lst
+        return lst
+
+
+cpdef str infer_compression(str filename, str default=None):
     ending = filename.rpartition('.')[2]
     if ending == 'gz':
         return 'gzip'
@@ -50,9 +81,10 @@ def infer_compression(filename, default=None):
         return default
 
 
-def max_num(iterable, key=None):
-    max_items = []
-    max_value = np.NINF
+cpdef list max_num(iterable, key=None):
+    cdef list max_items = []
+    cdef float max_value = float('-inf')
+    cdef float value
     for item, value in zip(iterable, (map(key, iterable) if key else iterable)):
         if value > max_value:
             max_items = [item]
@@ -62,7 +94,7 @@ def max_num(iterable, key=None):
     return max_items
 
 
-def max2(iterable, key=None):
+cpdef tuple max2(iterable, key=None):
     first = None
     second = None
     first_value = np.NINF
@@ -112,17 +144,17 @@ def unique_single_element(iterable, key=None):
     return True
 
 
-def load_pickle(filename):
+cpdef load_pickle(str filename):
     with open(filename, 'rb') as f:
         return pickle.load(f)
 
 
-def save_pickle(filename, obj):
+cpdef void save_pickle(str filename, obj) except *:
     with open(filename, 'wb') as f:
         pickle.dump(obj, f)
 
 
-def save_json(filename, obj):
+cpdef void save_json(str filename, obj) except *:
     with open(filename, 'w') as f:
         json.dump(obj, f)
 
@@ -133,8 +165,8 @@ def ls(fregex):
         yield line.strip()
 
 
-def otherside(address, prefixlen=None, network=None):
-    if prefixlen is None:
+cpdef str otherside(str address, int prefixlen=-1, str network=None):
+    if prefixlen < 0:
         prefixlen = int(network.partition('/')[2])
     ipnum = unpack("!L", inet_aton(address))[0]
     if prefixlen == 30:
@@ -152,3 +184,17 @@ def otherside(address, prefixlen=None, network=None):
     else:
         raise Exception('{} is not 30 or 31'.format(prefixlen))
     return inet_ntoa(pack('!L', oside))
+
+
+def read_filenames(filename):
+    with open(filename) as f:
+        for line in f:
+            if not line.startswith('#'):
+                line = line.strip()
+                if line:
+                    yield line
+
+
+cpdef peek(s):
+    for i in s:
+        return i

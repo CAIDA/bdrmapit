@@ -1,7 +1,9 @@
+sqlalchemy
+Cython
+beautifulsoup4
 lxml
 requests
 numpy
-ipyparallel
-networkx
 pandas
 py-radix
+python-dateutil

@@ -1,35 +1,64 @@
-# bdrmapit.py
-The [bdrmapit.py](bdrmapit.py) runs the bdrmapIT algorithm.
+# Running <tt>bdrmapIT</tt>
+The [bdrmapit.py](bdrmapit.py) runs the <tt>bdrmapIT</tt> algorithm. The arguments can either be specified on the command line or in a configuration file. If using a configuration file, more than one bdrmapit run can be specified. Additionally, they can optionally be run in parallel.
+
+Parallel execution is useful when the graph is relatively small (< a few million interfaces). However, it is expected that everything will slow considerably if the graphs do not fit in memory.
+
+## Configuration File
+The configuration file can be either a CSV or Excel spreadsheet. It must have the following columns, along with a header row as the first row. Extra columns are fine and will be ignored.
+
+|Column|Required|Description|
+|---|---|---|
+|addrs|Yes|The addresses file produced by parser.py|
+|adjs|Yes|The adjacency CSV file produced by parser.py|
+|dps|Yes|The destpairs CSV file produced by parser.py|
+|dists|Yes|The distances CSV file produced by parser.py|
+|nodes|No|An alias resolution file in the CAIDA ITDK nodes file format (see below). Can optionally be a blank field.|
+|ip2as|Yes|The output file produced by the ip2as.py script.|
+|as2org|No|A file containing AS-to-Organization mappings, in the same format as the CAIDA [as2org](http://data.caida.org/datasets/as-organizations/README.txt) files. These mappings are used to identify siblings.|
+|rels|Yes|AS relationships file in the format of the CAIDA [AS relationships](http://data.caida.org/datasets/as-relationships/README.txt) files.|
+|cone|Yes|Customer cone file in the format of the CAIDA [customer cone](http://data.caida.org/datasets/as-relationships/README.txt) files.|
+|output|Yes|Filename where the output sqlite database will be written. The file will be overwritten without warning if it exists.|
 
 ## Options
+The command line options are specified below. Options where the required field is marked <tt>C</tt> are only required when not using a configuration file.
+
 |Option|Required|Default|Description|
 |---|---|---|---|
-|-a, --adj|Yes|None|The adjacency CSV file produced by parser.py|
-|-d, --dp|Yes|None|The destpairs CSV file produced by parser.py|
-|-e, --dist|Yes|None|The distances CSV file produced by parser.py|
-|-n, --nodes|No|None|An inferred router (nodes) file in the standard CAIDA format (see below).|
-|-i, --ip2as|Yes|None|The output file produced by the ip2as.py script.|
-|-A, --as2org|No|None|A file containing AS-to-Organization mappings, in the same format as the CAIDA [as2org](http://data.caida.org/datasets/as-organizations/README.txt) files. These mappings are used to identify siblings.|
-|-R, --rels|No|None|AS relationships file in the format of the CAIDA [AS relationships](http://data.caida.org/datasets/as-relationships/README.txt) files.|
-|-c, --cone|No|None|Customer cone file in the format of the CAIDA [customer cone](http://data.caida.org/datasets/as-relationships/README.txt) files.|
-|-o, --output|No|stdout|Filename where the output CSV will be written.|
+|-b, --addrs|C| |See column <tt>addrs</tt> above.|
+|-a, --adsj|C| |See column <tt>adjs</tt> above.|
+|-d, --dps|C| |See column <tt>dps</tt> above.|
+|-e, --dists|C| |See column <tt>dists</tt> above.|
+|-n, --nodes|No| |See column <tt>nodes</tt> above.|
+|-i, --ip2as|C| |See column <tt>ip2as</tt> above.|
+|-A, --as2org|C| |See column <tt>as2org</tt> above.|
+|-R, --rels|C| |See column <tt>rels</tt> above.|
+|-c, --cone|C| |See column <tt>cone</tt> above.|
+|-o, --output|C| |See column <tt>output</tt> above.|
+|-i, --iterations|No|-1|Maximum iterations of the graph refinement loop. If less than 0, it will loop until a repeated state.|
+|--config|No| |Configuration file in the format specified above. The columns in the file override anyting specified on the command line.|
+|--processes|No|1|Number of parallel processes. Greater than 1 will result in parallel execution.|
 
 
 ## Output
-It produces a CSV with the following fields:
+It produces an sqlite database with a single table named annotation. Its columns are:
 
-|Field|Description|
-|---|---|
-|Router|Inferred router identifier. Either the identifier in the specified nodes file, otherwise an identifier created by the script of the form M<*number*>.|
-|Interface|The IP interface address.|
-|ASN|The node AS annotation.|
-|Org|The AS-to-Org mapping of ASN.|
-|ConnASN|The interface AS annotation.|
-|ConnOrg|The AS-to-Org mapping of ConnASN.|
-|RUpdate|Indicates how ASN was derived:  -1) Based only on the node's interfaces,  0) The last hop heuristic, or  1) Using subsequent interfaces.|
-|IUpdate|Indicates how ConnASN was derived:  -2) The origin AS is different from ASN,  -1) Based only on the interface's origin AS, or  1) Using preceding nodes.|
+|Field|Type|Description|
+|---|---|---|
+|addr|text|IP address of the interface.|
+|router|text|Router identifier. If there were no aliases specified for addr, this will be the same as the addr field.|
+|asn|int|The router's AS annotation, i.e. which AS operates the router.|
+|org|text|AS2Org mapping for asn.|
+|conn_asn|int|The interface's annotation, i.e., which network operates the router(s) connected to addr.|
+|conn_org|text|AS2Org mapping for conn_asn.|
+|iasn|int|The origin AS for addr.|
+|iorg|text|AS2Org mapping for iasn.|
+|rtype|int|Used for testing and debugging. Will be removed without notice.|
 
-If a file is specified using the -o option, the CSV will be written to that file, otherwise it will be written to stdout.
+An inter-AS link can be easily identified by querying for <tt>addrs</tt> with a different <tt>asn</tt> and <tt>conn_asn</tt>. As an example, the query:
+```sqlite
+SELECT * FROM annoation WHERE asn != conn_asn
+```
+will return all interfaces used for interdomain links.
 
 ### Annotations
 The two primary goals of <tt>bdrmapIT</tt> are annotating each node (group of interfaces on the same router) with an AS, and annotating each individual interface with an AS.

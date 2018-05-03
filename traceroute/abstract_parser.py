@@ -2,14 +2,18 @@ import json
 from abc import ABC, abstractmethod
 from collections import Counter
 from enum import Enum
+from typing import Optional
 
+import cython
+
+from bgp.routing_table import RoutingTable
 from traceroute.warts import Warts
 from utils.utils import File2
 import numpy as np
 import pandas as pd
 
 
-ip2as = None
+ip2as: RoutingTable = None
 
 
 class OutputType(Enum):
@@ -90,34 +94,35 @@ class Parser:
                     yield AtlasTrace(j)
 
 
-class AbstractTrace(ABC):
+class AbstractTrace:
 
-    def __init__(self, j):
+    def __init__(self, j, skip_processing=False):
         self.j = j
-        self.hopslist = self._create_hopslist()
-        self.hopslist = remove_loops(self.hopslist)
-        self.hopslist = remove_private(self.hopslist)
+        if not skip_processing:
+            self.hopslist = self._create_hopslist()
+            self.hopslist = remove_loops(self.hopslist)
+            self.hopslist = remove_private(self.hopslist)
 
     @property
-    @abstractmethod
     def addresses(self):
         raise NotImplementedError
 
     @property
-    @abstractmethod
-    def dst(self):
+    def dst(self) -> str:
         raise NotImplementedError
 
     @property
-    def dst_asn(self):
+    def dst_asn(self) -> int:
         return ip2as[self.dst]
 
-    @abstractmethod
+    @property
+    def lasthop(self) -> Optional[Hop]:
+        raise NotImplementedError
+
     def _create_hopslist(self):
         raise NotImplementedError
 
     @property
-    @abstractmethod
     def stop_reason(self):
         raise NotImplementedError
 
@@ -166,6 +171,28 @@ class AtlasTrace(AbstractTrace):
         return newhops
 
     @property
+    def lasthop(self):
+        hops = self.j.get('result')
+        if hops:
+            hop = hops[-1]
+            h = None
+            address = None
+            replies = hop.get('result')
+            if replies:
+                for result in replies:
+                    curr_addr = result.get('from')
+                    if curr_addr:
+                        if address is not None and curr_addr != address:
+                            h = None
+                            break
+                        address = result['from']
+                        asn = ip2as[address]
+                        ttl = hop['hop'] - 1
+                        h = Hop(address, asn, ttl, result['ttl'])
+            if h:
+                return h
+
+    @property
     def dst(self):
         return self.j['dst_addr']
 
@@ -209,6 +236,19 @@ class WartsTrace(AbstractTrace):
                     trace[ttl] = False
                     hopslist.pop()
         return hopslist
+
+    @property
+    def lasthop(self):
+        hops = self.j.get('hops')
+        if hops:
+            hop = hops[-1]
+            address = hop['addr']
+            ttl = hop['probe_ttl'] - 1
+            asn = ip2as[address]
+            hop['asn'] = asn
+            h = Hop(address, asn, ttl, hop['reply_ttl'], qttl=hop.get('icmp_q_ttl', 1), icmp_type=hop['icmp_type'])
+            return h
+
 
     @property
     def addresses(self):

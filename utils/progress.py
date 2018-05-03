@@ -1,26 +1,23 @@
 import sys
-import logging
-
-
-log = logging.getLogger()
-if not log.hasHandlers():
-    ch = logging.StreamHandler(sys.stderr)
-    log.addHandler(ch)
 
 
 class Progress:
     """A class for creating progress updates for long running operations."""
-    def __init__(self, total=None, message='', increment=1, multiplier=1, start=0, callback=None):
+
+    should_output = True
+
+    def __init__(self, total=None, message='', increment=1, multiplier=1, start=0, callback=None, force=False):
         self.total = total
         self.message = message
         self.increment = increment
         self.multiplier = multiplier
         self.current = start
         self.callback = callback if callback else str
+        self.should_output = force or Progress.should_output
 
     def iterator(self, iterable):
         """Iterates over iterable and automatically updates the status at the predefined increments."""
-        if should_output():
+        if self.should_output:
             self.show()
             i = 0
             for n in iterable:
@@ -45,21 +42,11 @@ class Progress:
         else:
             sys.stderr.write('\r\033[K{:s} {:,d}. {:s}'.format(self.message, self.current, self.callback()))
 
+    @staticmethod
+    def set_output(b):
+        Progress.should_output = b
 
-def finish_status(message='Done'):
-    if should_output():
-        sys.stderr.write('{:s}.\n'.format(message))
-
-
-def status(message):
-    if should_output():
-        sys.stderr.write('\r\033[K{:s} '.format(message))
-
-
-def cstatus(message):
-    if should_output():
-        sys.stderr.write(message)
-
-
-def should_output():
-    return logging.getLogger().getEffectiveLevel() <= logging.INFO
+    @staticmethod
+    def message(message):
+        if Progress.should_output:
+            print(message)

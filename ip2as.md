@@ -23,7 +23,7 @@ It produces a CSV with the following fields:
 
 |Field|Description|
 |---|---|
-|Prefix|An IP prefix in standard notation <network>/prefixlen. Ex: x.x.x.0/24|
+|Prefix|An IP prefix in standard notation <network>/prefixlen (e.g.: x.x.x.0/24) |
 |ASN|AS number associated with that prefix.|
 
 If a file is specified using the -o option, the CSV will be written to that file, otherwise it will be written to stdout.

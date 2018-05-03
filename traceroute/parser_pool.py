@@ -7,6 +7,7 @@ from logging import getLogger, INFO
 from multiprocessing import Queue, Process, current_process
 from sys import stderr
 from traceback import TracebackException
+from typing import List, Dict
 
 import pandas as pd
 
@@ -17,15 +18,15 @@ from utils.progress import Progress
 log = getLogger()
 log.setLevel(INFO)
 
-Adjacency = namedtuple('Adjacency', ['Hop1', 'Hop2', 'Distance', 'Private', 'Suspicious', 'Type'])
-DestPair = namedtuple('DestPair', ['Interface', 'DestASN', 'Echo', 'Suspicious', 'Loop'])
+Adjacency = namedtuple('Adjacency', ['Hop1', 'Hop2', 'Distance', 'Type'])
+DestPair = namedtuple('DestPair', ['Interface', 'DestASN', 'Echo', 'Loop'])
 Distance = namedtuple('Distance', ['Hop1', 'Hop2', 'Distance'])
 Outputs = namedtuple('Outputs', ['Addrs', 'Adjs', 'DPs', 'Dists'])
 TB = namedtuple('TB', ['value'])
 args = None
 
 
-def worker_func(jobs, outputs, status):
+def worker_func(jobs: Queue, outputs: List[Queue], status: Queue):
     try:
         p = current_process()
         pid = p.pid
@@ -47,7 +48,7 @@ def worker_func(jobs, outputs, status):
         status.put(t)
 
 
-def combine(fqueue, ofile, status, poolsize):
+def combine(fqueue: Queue, ofile: str, status: Queue, poolsize: int):
     try:
         header = ''
         p = current_process()
@@ -61,15 +62,17 @@ def combine(fqueue, ofile, status, poolsize):
                 if poolsize == 0:
                     break
                 continue
-            with open(filename) as f:
-                header = f.readline()
-                s.update(f)
-            if not args.keep:
-                os.remove(filename)
+            if not args.no_combine:
+                with open(filename) as f:
+                    header = f.readline()
+                    s.update(f)
+                if not args.keep:
+                    os.remove(filename)
             status.put((pid, name, len(s)))
-        with open(ofile, 'w') as f:
-            f.write(header)
-            f.writelines(s)
+        if not args.no_combine:
+            with open(ofile, 'w') as f:
+                f.write(header)
+                f.writelines(s)
         status.put((pid, None, len(s)))
     except:
         exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -78,7 +81,7 @@ def combine(fqueue, ofile, status, poolsize):
         status.put(t)
 
 
-def combine_dists(fqueue, ofile, status, poolsize):
+def combine_dists(fqueue: Queue, ofile: str, status: Queue, poolsize: int):
     try:
         p = current_process()
         pid = p.pid
@@ -91,12 +94,14 @@ def combine_dists(fqueue, ofile, status, poolsize):
                 if poolsize == 0:
                     break
                 continue
-            for hop1, hop2, n in pd.read_csv(filename).itertuples(index=False, name=None):
-                s[(hop1, hop2)] += n
-            if not args.keep:
-                os.remove(filename)
+            if not args.no_combine:
+                for hop1, hop2, n in pd.read_csv(filename).itertuples(index=False, name=None):
+                    s[(hop1, hop2)] += n
+                if not args.keep:
+                    os.remove(filename)
             status.put((pid, name, len(s)))
-        write_distances(ofile, s, nonegative=True)
+        if not args.no_combine:
+            write_distances(ofile, s, nonegative=True)
         status.put((pid, None, len(s)))
     except:
         exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -105,7 +110,7 @@ def combine_dists(fqueue, ofile, status, poolsize):
         status.put(t)
 
 
-def create_combiners(func, queue, filename, status, poolsize, name, workers, cj, sizes):
+def create_combiners(func, queue: Queue, filename: str, status: Queue, poolsize: int, name: str, workers: Dict[int, Process], cj: Dict[str, int], sizes: Dict[str, int]):
     p = Process(target=func, args=(queue, filename, status, poolsize), name=name)
     p.start()
     workers[p.pid] = p
@@ -120,7 +125,7 @@ def mkdirs():
     os.makedirs(os.path.join(args.output_dir, 'dists'), exist_ok=True)
 
 
-def process_trace_file(filename, output_type, outputs=None):
+def process_trace_file(filename: str, output_type: ap.OutputType, outputs=None):
     addresses = ap.Set2(args.addr)
     adjacencies = ap.Set2(args.adj)
     destpairs = ap.Set2(args.dp)
@@ -138,7 +143,7 @@ def process_trace_file(filename, output_type, outputs=None):
                 qttl2 = hop2.qttl
                 addr2 = hop2.addr
                 if hop2.asn > -2:
-                    destpairs.add((addr2, dest_asn, hop2.icmp_type == 0, False, loop))
+                    destpairs.add((addr2, dest_asn, hop2.icmp_type == 0, loop))
                 while i < numhops - 1:
                     i += 1
                     hop1, hop2 = hop2, hopslist[i]
@@ -149,9 +154,8 @@ def process_trace_file(filename, output_type, outputs=None):
                     distances[(addr1, addr2)] += 1 if distance == 1 else -1
                     if hop3:
                         distances[(addr1, hop3.addr)] -= 1
-                    issuspicious = hop2.ttl > trace.suspicious_hop(dest_asn)
                     if hop2.asn > -2:
-                        destpairs.add((addr2, dest_asn, hop2.icmp_type == 0, issuspicious, loop))
+                        destpairs.add((addr2, dest_asn, hop2.icmp_type == 0, loop))
                     if addr1 != addr2:  # Skip links with the same address
                         if qttl2 == 0:
                             if not (hop3 and (addr2 == hop3.addr or hop2.reply_ttl - hop3.reply_ttl == (hop3.ttl - hop2.ttl) - 1)):
@@ -167,13 +171,13 @@ def process_trace_file(filename, output_type, outputs=None):
                             link_type = -1
                         else:
                             link_type = 2
-                        adjacencies.add((addr1, addr2, link_type, hop1.private, issuspicious, hop2.icmp_type))
+                        adjacencies.add((addr1, addr2, link_type, hop2.icmp_type))
     write_tmps(filename, destpairs, distances, adjacencies, addresses, outputs=outputs)
 
 
-def run(files, poolsize):
+def run(files: List[str], poolsize: int):
+    mkdirs()
     if len(files) > 1:
-        mkdirs()
         jobs = Queue()  # Traceroute filenames will be put here for the works
         outputs = Outputs(*[Queue() for _ in Outputs._fields])  # Workers put completed filenames here for aggs to read
         status = Queue()
@@ -230,10 +234,9 @@ def run(files, poolsize):
                 p.terminate()
                 p.join()
     else:
-        mkdirs()
         pb = Progress(len(files))
-        for filename in pb.iterator(files):
-            process_trace_file(*filename)
+        for filename, output_type in pb.iterator(files):
+            process_trace_file(filename, output_type)
 
 
 def write_tmps(filename, destpairs, distances, adjacencies, addresses, outputs=None):
@@ -299,21 +302,25 @@ def read_filenames(f, output_type):
 def main(vargs=None, ip2as=None):
     global args
     parser = ArgumentParser()
-    parser.add_argument('-a', '--adj', action='store_true', help='Adjacency output file.')
-    parser.add_argument('-b', '--addr', action='store_true', help='Addresses output file.')
-    parser.add_argument('-d', '--dp', action='store_true', help='Dest pairs output file.')
-    parser.add_argument('-e', '--dist', action='store_true', help='Distances between interfaces.')
+    parser.add_argument('-a', '--adj', action='store_false', help='Adjacency output file.')
+    parser.add_argument('-b', '--addr', action='store_false', help='Addresses output file.')
+    parser.add_argument('-d', '--dp', action='store_false', help='Dest pairs output file.')
+    parser.add_argument('-e', '--dist', action='store_false', help='Distances between interfaces.')
     parser.add_argument('-W', '--warts', type=FileType('r'), help='File containing warts filenames.')
+    parser.add_argument('-w', '--single-warts', help='Single warts file.')
     parser.add_argument('-A', '--atlas', type=FileType('r'), help='File containing atlas filenames.')
     parser.add_argument('-k', '--keep', action='store_true', help='Keep the intermediate files.')
     parser.add_argument('-o', '--output-dir', default='.', help='Directory where the output files will be written.')
     parser.add_argument('-p', '--poolsize', default=1, type=int, help='Number of parallel processes.')
     parser.add_argument('-i', '--ip2as', required=True, help='BGP prefix file regex to use.')
+    parser.add_argument('--no-combine', action='store_true', help='Prevent combining outputs.')
     if vargs:
         args = parser.parse_args(vargs)
     else:
         args = parser.parse_args()
     files = []
+    if args.single_warts:
+        files.append((args.single_warts, ap.OutputType.warts))
     if args.warts:
         files.extend(read_filenames(args.warts, ap.OutputType.warts))
         log.info('Number of warts files {:,d}'.format(len(files)))
@@ -324,4 +331,4 @@ def main(vargs=None, ip2as=None):
     log.info('Number of files {:,d}'.format(len(files)))
     ap.ip2as = rt.RoutingTable.ip2as(args.ip2as) if ip2as is None else ip2as
     run(files, args.poolsize)
-    print('Cleaning up...', file=stderr)
+    print('Cleaning up...')

@@ -1,5 +1,5 @@
 # parser.py
-This script processes raw **warts** traceroute files in parallel, extracting addresses, interface-level links (adjacencies), interface-destination AS pairs (destpairs), and whether interfaces normally appear adjacent or not (distances).
+This script processes raw **warts** and **atlas** traceroute files in parallel, extracting addresses, interface-level links (adjacencies), interface-destination AS pairs (destpairs), and whether interfaces normally appear adjacent or not (distances).
 I have been using this script on a machine with 160 cores, 500 GB or memory, and SSD storage.
 I typically use a pool of 30 processes, and each one runs at around 100% CPU utilization.
 The script runs fast on that machine, but it might be significantly slower with other configurations.
@@ -7,16 +7,13 @@ The script runs fast on that machine, but it might be significantly slower with 
 ## Options
 |Field|Required|Description|Default|
 |---|---|---|---|
-|-i, --ip2as|Yes|The output file produced by the ip2as.py script.|None|
+|-i, --ip2as|Yes|The output file produced by the [ip2as.py](ip2as.md) script.|None|
 |-W, --warts|No|Filename of a file containing Warts traceroute filenames, one per line.|None|
 |-A, --atlas|No|Filename of a file containing Atlas traceroute filenames, one per line.|None|
 |-o, --output-dir|No|Directory where output files will be written. The intermediate files will also be written here.|Current directory|
 |-k, --keep|No|Indicates that the intermediate files should not be deleted.|False|
 |-p, --poolsize|No|Number of processes to use when processing the traceroute files. Each process will work on a file at a time.|1|
-|-a, --adj|No|Extract the interface adjacencies. Will be written to adjs.csv.|False|
-|-b, --addr|No|Extract the addresses. Will be written to addrs.csv. I only use this for validation.|False|
-|-d, --dp|No|Extract the destpairs. Will be written to dps.csv.|False|
-|-e, --dist|No|Extract the distances. Will be written to dist.csv.|False|
+|--no-combine|No|Do not combine the individual file outputs. Useful when processing files for separate <tt>bdrmapIT</tt> runs. Overrides the <tt>-k</tt> options, forcing it to True.|False|
 
 ## Notes
 * When specifying filenames with the -W or -A option, they should either be absolute or relative to the current directory.

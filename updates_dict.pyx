@@ -2,15 +2,11 @@ from collections import Sequence, namedtuple
 
 import pandas as pd
 
-from edge import Priority, Type
-from utils.utils import unique_everseen
-
 ASN = 0
 ORG = 1
 UTYPE = 2
 
-
-class Updates(dict):
+cdef class Updates(dict):
     @classmethod
     def from_updates(cls, updates, name=None):
         if name is None:
@@ -22,19 +18,16 @@ class Updates(dict):
         super().__init__(*args, **kargs)
         self.name = name
 
-    def add_update(self, node, asn, org, utype):
+    def __missing__(self, key):
+        return -1, '-1', -1
+
+    cpdef void add_update(self, Router node, int asn, str org, int utype) except *:
         self[node] = (asn, org, utype)
 
-    def asn(self, node):
+    cpdef int asn(self, Router node) except -1:
         return self[node][ASN]
 
-    def asn_default(self, node, default=None):
-        try:
-            return self.asn(node)
-        except KeyError:
-            return default
-
-    def bdrmap_output(self, filename, asn=None, org=None, routers=None):
+    cpdef void bdrmap_output(self, str filename, asn=None, str org=None, routers=None) except *:
         connections = self.router_connections(routers, asn=asn, org=org)
         with open(filename, 'w') as f:
             for rasn, rorg, interfaces, far_sides in connections:
@@ -57,52 +50,14 @@ class Updates(dict):
     def copy(self):
         return Updates.from_updates(self)
 
-    def delete(self, node):
-        del self[node]
-
-    def isupdated(self, node):
-        try:
-            return node.org != self[node][ORG]
-        except KeyError:
-            return False
-
-    def links(self, interfaces, asn=None, org=None):
+    cpdef links(self, interfaces, asn=None, org=None):
         df = self.results(interfaces)
         return df[(df.Org == org) | (df.ConnOrg == org)][['Interface', 'ASN', 'ConnASN']].copy()
 
-    def mapping(self, node):
-        asn, org, _ = self[node]
-        return asn, org
-
-    def mapping_default(self, node):
-        try:
-            return self.mapping(node)
-        except KeyError:
-            return node.asn, node.org
-
-    def near_side(self, filename, routers, asn=None, org=None, include_all=False):
-        connections = self.router_connections(routers, asn=asn, org=org)
-        with open(filename, 'w') as f:
-            for asn, org, interfaces, far_sides in connections:
-                fasns = list(map(str, sorted(unique_everseen(fs.asn for fs in far_sides if fs.asn > 0 and fs.priority < Priority.multi and fs.type != Type.same_as))))
-                if len(fasns) == 1 and asn in fasns:
-                    continue
-                if fasns or include_all:
-                    f.write(','.join(i.address for i in interfaces))
-                    f.write('|')
-                    f.write(','.join(fasns))
-                    f.write('\n')
-
-    def org(self, node):
+    cpdef str org(self, Router node):
         return self[node][ORG]
 
-    def org_default(self, node, default=None):
-        try:
-            return self.org(node)
-        except KeyError:
-            return default
-
-    def results(self, interfaces, updates_only=False, networks=None):
+    cpdef results(self, list interfaces, bint updates_only=False, list networks=None):
         if networks and not isinstance(networks, Sequence) or isinstance(networks, str):
             networks = {networks}
         elif networks:
@@ -130,7 +85,7 @@ class Updates(dict):
         return pd.DataFrame(rows, columns=[
             'Router', 'Interface', 'ASN', 'Org', 'ConnASN', 'ConnOrg', 'RUpdate', 'IUpdate'])
 
-    def router_connections(self, routers, asn=None, org=None):
+    def router_connections(self, list routers, asn=None, str org=None):
         NearSide = namedtuple('NearSide', ['asn', 'org', 'interfaces', 'far_sides'])
         FarSide = namedtuple('FarSide', ['address', 'asn', 'org', 'priority', 'type', 'router'])
         connections = []
