@@ -1,7 +1,7 @@
 # bdrmapIT
 This is the code to run bdrmapIT. There are a lot of files but only a few need to be run from the command line.
 
-Running <tt>bdrmapIT</tt> requires at least python3.6. (Developement and tested for 3.6+, but might work with older versions.)
+Running <tt>bdrmapIT</tt> requires at least python3.6. (Developed under and tested for 3.6+, but might work with older versions.)
 
 ## Using virtualenv
 ```bash
