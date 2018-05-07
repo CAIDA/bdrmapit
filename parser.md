@@ -27,6 +27,4 @@ This means that the total number of processes running at one time is the poolsiz
 I imagine this will be quite slow if the aggregated results do not fit in memory.
 * The intermediate results are written to, and read from, the hard drive.
 I've been using quick SSDs, and I'm not sure how well it will perform with HDDs.
-* The script uses the Unix ls command to find the files using the specified regex.
-This will not work on Windows.
 * If a single file is being processed, it will be processed and written by the main process without spawning any child processes.
