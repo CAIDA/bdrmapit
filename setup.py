@@ -18,7 +18,7 @@ setup(
         'updates_dict.pyx',
         'traceroute/abstract_parser.py',
         'traceroute/parser_pool_sqlite.py',
-        'create_objs_cy.pyx',
+        'create_objs_sqlite.pyx',
         'algorithm_cy.pyx',
         'last_hop.pyx'
     ], nthreads=0)
