@@ -4,7 +4,7 @@ import sqlite3
 from argparse import ArgumentParser
 from multiprocessing.pool import Pool
 
-import algorithm_restart as alg
+import algorithm_cy as alg
 from create_objs_sqlite import CreateObjs
 import last_hop as lh
 from as2org import AS2Org
