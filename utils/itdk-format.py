@@ -4,11 +4,13 @@ import sys, getopt
 import csv
 
 def Help():
-    print sys.argv[0],"-d date [-O output_dir]"
-    print "   converts between the bdrmapIT format and the ITDK format"
+    print(sys.argv[0],"-d date [-O output_dir]")
+    print("   converts between the bdrmapIT format and the ITDK format")
+
 
 def Main(argv):
     ParseArguments(argv)
+
 
 def ParseArguments(argv):
     try:
@@ -28,6 +30,7 @@ def ParseArguments(argv):
 
     Convert(argv[0])
 
+
 def Convert(filename):
     with open(filename,"r") as filecvs:
         reader = csv.DictReader(filecvs)
@@ -38,13 +41,14 @@ def Convert(filename):
             nid = row['Router']
             asn = row['ASN']
             if nid_current != nid:
-                print "node.AS",nid,asn
+                print("node.AS", nid, asn)
             elif asn != asn_current:
                 sys.stderr.write(filename+"["+str(linenum)+"] node N"+nid+" multiple ASN values "+asn+", "+asn_current+"\n")
             nid_current = nid
             asn_current = asn
             linenum += 1
-    
+
+
 Main(sys.argv[1:])
 
 

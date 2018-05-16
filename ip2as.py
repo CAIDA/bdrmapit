@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import csv
 import re
 from argparse import ArgumentParser, FileType
@@ -8,7 +9,7 @@ import rirparser
 from as2org import AS2Org
 from bgp.bgp import BGP
 from bgp.routing_table import RoutingTable
-from utils.utils import read_filenames, max_num, File2
+from utils.utils import read_filenames, unique_everseen, max_num, File2
 
 split = re.compile('[_,]')
 
@@ -44,8 +45,13 @@ def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir=None, b
     return rt
 
 
-def determine_asn(asns, bgp=None, as2org=None):
-    asns = [asn for asn in set(map(int, split.split(asns))) if valid(asn)]
+def determine_asn(asnsstr, bgp=None, as2org=None):
+    asns = []
+    for asnstr in split.split(asnsstr):
+        if asnstr:
+            asn = int(asnstr)
+            if valid(asn):
+                asns.append(asn)
     if len(asns) == 1:
         return asns[0]
     if not asns:
@@ -83,7 +89,7 @@ def read_prefixes(filename, bgp=None, as2org=None):
 
 
 def valid(asn):
-    return 0 < asn < 64496 or 131071 < asn < 4200000000
+    return asn != 23456 and 0 < asn < 64496 or 131071 < asn < 4200000000
 
 
 def main():

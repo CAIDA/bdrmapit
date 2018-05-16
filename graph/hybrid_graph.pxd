@@ -33,16 +33,19 @@ cdef class HybridGraph:
     cdef public DictSet rnh_ases
     cdef public DictSet re_ases
     cdef public DictSet rm_ases
+    cdef public rnh_interfaces
+    cdef public re_interfaces
+    cdef public rm_interfaces
     cdef public list routers
     cdef public list routers_succ
     cdef public list routers_nosucc
     cdef public list interfaces_pred
 
-    cpdef void add_interface(self, str address, int asn, str org) except *
-    cpdef Router add_router(self, str name)
-    cpdef void add_dest(self, str address, int asn) except *
-    cpdef void add_edge(self, str xaddr, str yaddr, int distance, int icmp_type) except *
-    cpdef list contributing_interfaces(self, Router router, int priority)
+    cdef void add_interface(self, str address, int asn, str org) except *
+    cdef Router add_router(self, str name)
+    cdef void add_dest(self, str address, int asn) except *
+    cdef int add_edge(self, str xaddr, str yaddr, int distance, int icmp_type) except -1
+    cpdef set router_edge_dests(self, Router router, Interface subsequent, int rtype = *)
     cpdef HybridGraph copy(self)
     cpdef set iedges(self, Interface interface)
     cpdef set origin_ases(self, Router router, Interface interface, int priority)

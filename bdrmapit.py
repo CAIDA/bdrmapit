@@ -1,12 +1,11 @@
+#!/usr/bin/env python
 import os
+import sqlite3
 from argparse import ArgumentParser
 from multiprocessing.pool import Pool
 
-from sqlalchemy import MetaData, Table, Column, Text, Integer
-from sqlalchemy.engine import Engine, create_engine
-
-import algorithm_cy as alg
-import create_objs_cy as co
+import algorithm_restart as alg
+from create_objs_sqlite import CreateObjs
 import last_hop as lh
 from as2org import AS2Org
 from bgp.bgp import BGP
@@ -18,7 +17,7 @@ import pandas as pd
 from collections import namedtuple
 
 
-Experiment = namedtuple('Experiment', ['addrs', 'nodes', 'adjs', 'dps', 'dists', 'output', 'ip2as', 'as2org', 'rels', 'cone', 'iterations'])
+Experiment = namedtuple('Experiment', ['db', 'nodes', 'output', 'ip2as', 'as2org', 'rels', 'cone', 'iterations'])
 
 
 def opendb(filename, remove=False):
@@ -27,27 +26,30 @@ def opendb(filename, remove=False):
             os.remove(filename)
         except FileNotFoundError:
             pass
-    engine = create_engine('sqlite:///{}'.format(filename))
-    meta = MetaData()
-    annotation = Table(
-        'annotation', meta,
-        Column('addr', Text),
-        Column('router', Text),
-        Column('asn', Integer),
-        Column('conn_asn', Integer),
-        Column('org', Text),
-        Column('conn_org', Text),
-        Column('iasn', Text),
-        Column('iorg', Text),
-        Column('rtype', Integer)
-    )
-    meta.create_all(engine)
-    return engine, meta
+    con = sqlite3.connect(filename)
+    cur = con.cursor()
+    cur.execute('''CREATE TABLE IF NOT EXISTS annotation (
+      addr TEXT,
+      router TEXT,
+      asn INT,
+      conn_asn INT,
+      org TEXT,
+      conn_org TEXT,
+      iasn INT,
+      iorg TEXT,
+      utype INT,
+      itype INT,
+      rtype INT
+    )''')
+    cur.close()
+    con.commit()
+    return con
 
 
-def save(engine: Engine, meta: MetaData, bdrmapit: Bdrmapit, rupdates, iupdates, increment=100000, chunksize=10000):
+def save(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, iupdates, increment=100000, chunksize=10000):
     values = []
     pb = Progress(len(bdrmapit.graph.routers), 'Collecting annotations', increment=increment)
+    cur = con.cursor()
     for router in pb.iterator(bdrmapit.graph.routers):
         if router in bdrmapit.graph.rnexthop:
             rtype = 'n'
@@ -57,22 +59,26 @@ def save(engine: Engine, meta: MetaData, bdrmapit: Bdrmapit, rupdates, iupdates,
             rtype = 'm'
         else:
             rtype = 'l'
-        rasn, rorg, _ = bdrmapit.lhupdates.get(router, rupdates[router])
+        rasn, rorg, utype = bdrmapit.lhupdates.get(router, rupdates[router])
         for interface in bdrmapit.graph.router_interfaces[router]:
             if interface.org == rorg or interface.asn == 0:
-                iasn, iorg, _ = iupdates[interface]
+                iasn, iorg, itype = iupdates[interface]
                 if iasn == -1:
-                    iasn, iorg, _ = interface.asn, interface.org, -1
+                    iasn, iorg, itype = interface.asn, interface.org, -1
             else:
-                iasn, iorg, _ = interface.asn, interface.org, -2
-            d = dict(addr=interface.address, router=router.name, conn_asn=iasn, conn_org=iorg, asn=rasn, org=rorg,
-                     iasn=interface.asn, iorg=interface.org, rtype=rtype)
+                iasn, iorg, itype = interface.asn, interface.org, -2
+            d = (interface.address, router.name, rasn, iasn, rorg, iorg, interface.asn, interface.org, utype, itype, rtype)
             values.append(d)
             if len(values) == chunksize:
-                engine.execute(meta.tables['annotation'].insert(), values)
+                cur.executemany('INSERT INTO annotation (addr, router, asn, conn_asn, org, conn_org, iasn, iorg, utype, itype, rtype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
+                cur.close()
+                con.commit()
+                cur = con.cursor()
                 values = []
     if values:
-        engine.execute(meta.tables['annotation'].insert(), values)
+        cur.executemany('INSERT INTO annotation (addr, router, asn, conn_asn, org, conn_org, iasn, iorg, utype, itype, rtype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
+        cur.close()
+        con.commit()
 
 
 def run(row: Experiment):
@@ -80,24 +86,25 @@ def run(row: Experiment):
     as2org = AS2Org(row.as2org, include_potaroo=False)
     ip2as = RoutingTable.ip2as(row.ip2as)
     graph = HybridGraph()
-    co.read_addresses(row.addrs, graph, ip2as, as2org)
+    co = CreateObjs(row.db, graph, ip2as, as2org, bgp)
+    co.read_addresses()
     if row.nodes:
-        co.alias_resolution(row.nodes, graph)
+        co.alias_resolution(row.nodes)
     else:
         graph.router_interfaces.finalize()
-    true_adjs = co.adjacencies(row.dists)
-    co.create_graph(row.adjs, graph, true_adjs)
-    co.destpairs(row.dps, graph, as2org, bgp)
+    co.create_graph()
+    co.destpairs()
     graph.set_routers_interfaces()
     bdrmapit = Bdrmapit(graph, as2org, bgp, step=0)
-    echo_routers = [router for router in graph.routers_succ if alg.get_edges(bdrmapit, router)[1] == 2]
-    noecho_routers = [r for r in graph.routers_succ if r in graph.rnexthop or r in graph.rmulti]
-    all_lasthop_routers = graph.routers_nosucc + echo_routers
-    lh.annotate_lasthops(bdrmapit, routers=all_lasthop_routers)
-    rupdates, iupdates = alg.graph_refinement(bdrmapit, noecho_routers, graph.interfaces_pred,
-                                              iterations=row.iterations)
-    engine, meta = opendb(row.output, remove=True)
-    save(engine, meta, bdrmapit, rupdates, iupdates)
+    # echo_routers = [router for router in graph.routers_succ if alg.get_edges(bdrmapit, router)[1] == 2]
+    # noecho_routers = [r for r in graph.routers_succ if r in graph.rnexthop or r in graph.rmulti]
+    # all_lasthop_routers = graph.routers_nosucc + echo_routers
+    # lh.annotate_lasthops(bdrmapit, routers=all_lasthop_routers)
+    # rupdates, iupdates = alg.graph_refinement(bdrmapit, noecho_routers, graph.interfaces_pred, iterations=row.iterations)
+    lh.annotate_lasthops(bdrmapit, routers=graph.routers_nosucc)
+    rupdates, iupdates = alg.graph_refinement(bdrmapit, graph.routers_succ, graph.interfaces_pred, iterations=row.iterations)
+    con = opendb(row.output, remove=True)
+    save(con, bdrmapit, rupdates, iupdates)
 
 
 def run_config(filename, processes, iterations):
@@ -119,11 +126,8 @@ def run_config(filename, processes, iterations):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('-a', '--adjs', help='Adjacency output file.')
-    parser.add_argument('-b', '--addrs', help='Addresses seen in the traceroutes.')
+    parser.add_argument('-d', '--db', help='DB with output from parser.')
     parser.add_argument('-n', '--nodes', help='The ITDK nodes file.')
-    parser.add_argument('-d', '--dps', help='Dest pairs output file.')
-    parser.add_argument('-e', '--dists', help='Distances between interfaces.')
     parser.add_argument('-i', '--ip2as', help='BGP prefix file regex to use.')
     parser.add_argument('-A', '--as2org', help='AS-to-Org mappings in the standard CAIDA format.')
     parser.add_argument('-r', '--rels', help='AS relationship file in the standard CAIDA format.')

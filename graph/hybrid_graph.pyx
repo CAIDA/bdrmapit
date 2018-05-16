@@ -11,9 +11,6 @@ from utils.utils cimport DictList, DictSet
 cdef public int NEXTHOP = 1
 cdef public int ECHO = 2
 cdef public int MULTI = 3
-cdef public int MULTIECHO = 4
-
-SUCCTYPES = [NEXTHOP, ECHO, MULTI]
 
 cdef class NameRouter(dict):
     def __init__(self, dict interface_dict, *args, **kwargs):
@@ -78,27 +75,28 @@ cdef class HybridGraph:
         self.rnh_ases = DictSet()
         self.re_ases = DictSet()
         self.rm_ases = DictSet()
+        self.rnh_interfaces = DictSet()
+        self.re_interfaces = DictSet()
+        self.rm_interfaces = DictSet()
         self.routers = []
         self.routers_succ = []
         self.routers_nosucc = []
         self.interfaces_pred = []
 
-    cpdef void add_interface(self, str address, int asn, str org) except *:
+    cdef void add_interface(self, str address, int asn, str org) except *:
         cdef Interface interface = Interface(address, asn, org)
         self.address_interface[address] = interface
 
-    cpdef Router add_router(self, str name):
+    cdef Router add_router(self, str name):
         cdef Router router = Router(name)
         self.name_router[name] = router
         return router
 
-    cpdef void add_dest(self, str address, int asn) except *:
+    cdef void add_dest(self, str address, int asn) except *:
         cdef Interface interface = self.address_interface[address]
-        # cdef Router router = self.interface_router[interface]
         self.interface_dests[interface].add(asn)
-        # self.router_dests[router].add(asn)
 
-    cpdef void add_edge(self, str xaddr, str yaddr, int distance, int icmp_type) except *:
+    cdef int add_edge(self, str xaddr, str yaddr, int distance, int icmp_type) except -1:
         cdef Interface x = self.address_interface[xaddr]
         cdef Interface y = self.address_interface[yaddr]
         cdef Router xrouter = self.interface_router[x]
@@ -109,20 +107,18 @@ cdef class HybridGraph:
                 if icmp_type != 0:
                     self.rnexthop[xrouter].add(y)
                     self.rnh_ases[xrouter, y].add(x.asn)
+                    self.rnh_interfaces[xrouter, y].add(x)
                     self.inexthop[y].add(x)
-                    self.interface_succtype[x] = NEXTHOP
                 else:
                     self.recho[xrouter].add(y)
                     self.re_ases[xrouter, y].add(x.asn)
-                    succtype = self.interface_succtype.get(x, 100)
-                    if ECHO < succtype:
-                        self.interface_succtype[x] = ECHO
+                    self.re_interfaces[xrouter, y].add(x)
             else:
                 self.rmulti[xrouter].add(y)
                 self.rm_ases[xrouter, y].add(x.asn)
-                succtype = self.interface_succtype.get(x, 100)
-                if MULTI < succtype:
-                    self.interface_succtype[x] = MULTI
+                self.rm_interfaces[xrouter, y].add(x)
+            return 1
+        return 0
 
     cpdef HybridGraph copy(self):
         return HybridGraph.from_graph(self)
@@ -150,13 +146,26 @@ cdef class HybridGraph:
         else:
             raise ValueError('Invalid priority: {}'.format(priority))
 
-    cpdef list contributing_interfaces(self, Router router, int priority):
-        cdef list interfaces = []
+    cpdef set router_edge_dests(self, Router router, Interface subsequent, int rtype = 0):
+        cdef DictSet d
+        cdef set dests = set()
         cdef Interface interface
-        for interface in self.router_interfaces[router]:
-            if self.interface_succtype[interface] == priority:
-                interfaces.append(interface)
-        return interfaces
+        if rtype == 0:
+            if router in self.rnexthop:
+                rtype = NEXTHOP
+            elif router in self.recho:
+                rtype = ECHO
+            else:
+                rtype = MULTI
+        if rtype == NEXTHOP:
+            d = self.rnh_interfaces
+        elif rtype == ECHO:
+            d = self.re_interfaces
+        else:
+            d = self.rm_interfaces
+        for interface in d[router, subsequent]:
+            dests.update(self.modified_interface_dests[interface])
+        return dests
 
     def routers_degree(self) -> Iterator[Router]:
         for router in self.name_router.values():

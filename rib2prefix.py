@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from argparse import ArgumentParser, FileType
 from collections import Counter, defaultdict
 from multiprocessing.pool import Pool
@@ -18,7 +19,7 @@ def origins(origin):
 
 
 def parserib(filename: str):
-    counter = {}
+    counter = Counter()
     cmd = 'bgpreader -d singlefile -o rib-file,{} -w 0,2147483648'.format(filename)
     p = Popen(cmd, shell=True, stdout=PIPE, universal_newlines=True)
     for line in p.stdout:
@@ -29,7 +30,7 @@ def parserib(filename: str):
             if 8 <= prefixlen <= 25:
                 origin_as = fields[10]
                 t = (prefix, prefixlen, origin_as)
-                counter[t] = counter.get(t, 0) + 1
+                counter[t] += 1
     return counter
 
 
@@ -43,7 +44,7 @@ def parallel_parsing(files, poolsize):
 
 
 def organize_prefixes(prefixes_counter):
-    prefixes = defaultdict(dict)
+    prefixes = defaultdict(Counter)
     pb = Progress(len(prefixes), 'Organizing prefixes', increment=100000, callback=lambda: 'Used {:,d}'.format(len(prefixes)))
     for (address, prefixlen, asn), n in pb.iterator(prefixes_counter.items()):
         prefixes[(address, prefixlen)][asn] = n
@@ -51,12 +52,13 @@ def organize_prefixes(prefixes_counter):
 
 
 def write_prefixes(f, prefixes):
-    for (address, prefixlen), origins in sorted(prefixes.items(), key=lambda x: x[1][1]):
+    for (address, prefixlen), origins in prefixes.items():
         neworigins = []
         for origin, _ in origins.most_common():
             if '{' in origin:
                 origin = origin[1:-1]
-            neworigins.append(origin)
+            if origin:
+                neworigins.append(origin)
         f.write('{}\t{}\t{}\n'.format(address, prefixlen, '_'.join(neworigins)))
 
 
