@@ -1,9 +1,0 @@
-sqlalchemy
-Cython
-beautifulsoup4
-lxml
-requests
-numpy
-pandas
-py-radix
-python-dateutil
