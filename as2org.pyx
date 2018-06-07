@@ -90,29 +90,30 @@ cdef class Info:
 
 
 cdef class AS2Org(dict):
-    def __init__(self, str filename, bint include_potaroo=False, str compression='infer', str mluckie='validation-siblings.txt', *args, **kwargs):
+    def __init__(self, str filename, bint include_potaroo=False, str compression='infer', str mluckie=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data = {}
         ases, orgs = read_caida(filename, compression)
-        with open(mluckie) as f:
-            for line in f:
-                if line.strip() and line[0] != '#':
-                    asns = list(map(int, line.split()))
-                    for first in asns:
-                        if first in ases:
-                            asinfo = ases[first]
-                            forg = asinfo.org_id
-                            for asn in asns:
-                                if asn in ases:
-                                    old = ases[asn].asdict()
-                                    if old['org_id'] != forg:
-                                        old['org_id'] = forg
-                                        old['source'] = mluckie
-                                        ases[asn] = ASInfo(**old)
-                                else:
-                                    old = ASInfo(asn, None, str(asn), forg, mluckie)
-                                    ases[asn] = old
-                            break
+        if mluckie:
+            with open(mluckie) as f:
+                for line in f:
+                    if line.strip() and line[0] != '#':
+                        asns = list(map(int, line.split()))
+                        for first in asns:
+                            if first in ases:
+                                asinfo = ases[first]
+                                forg = asinfo.org_id
+                                for asn in asns:
+                                    if asn in ases:
+                                        old = ases[asn].asdict()
+                                        if old['org_id'] != forg:
+                                            old['org_id'] = forg
+                                            old['source'] = mluckie
+                                            ases[asn] = ASInfo(**old)
+                                    else:
+                                        old = ASInfo(asn, None, str(asn), forg, mluckie)
+                                        ases[asn] = old
+                                break
         for asn, asinfo in ases.items():
             self.data[asn] = Info(asinfo=asinfo, orginfo=orgs[asinfo.org_id])
         if include_potaroo:
