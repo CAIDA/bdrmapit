@@ -102,7 +102,7 @@ def main():
     parser.add_argument('-o', '--output', type=FileType('w'), default='-', help='Output file.')
     parser.add_argument('-a', '--as2org', help='AS-to-Org mappings in the standard CAIDA format.')
     args = parser.parse_args()
-    rir = list(read_filenames(args.rir))
+    rir = list(read_filenames(args.rir)) if args.rir is not None else None
     bgp = BGP(args.rels, args.cone)
     as2org = AS2Org(args.as2org, include_potaroo=False)
     ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, ixp_asns=None, rir=rir, bgp=bgp, as2org=as2org)
