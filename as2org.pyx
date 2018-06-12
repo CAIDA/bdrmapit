@@ -6,6 +6,7 @@ import lxml.html
 
 from utils.utils import File2
 
+import sys
 
 cdef class OrgInfo:
     def __init__(self, org_id, changed, org_name, country, source):

@@ -25,7 +25,7 @@ cdef class File2:
         elif self.compression == 'bzip2':
             self.f = bz2.open(self.filename, 'rt' if self.read else 'wt')
         else:
-            self.f = open(self.filename, 'r' if self.read else 'w')
+            self.f = open(self.filename, 'r' if self.read else 'w', encoding='utf8')
         return self.f
 
     def __exit__(self, exc_type, exc_val, exc_tb):
