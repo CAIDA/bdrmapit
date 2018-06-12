@@ -2,9 +2,12 @@ import socket
 import struct
 
 import math
+from collections import defaultdict
+
 import pandas as pd
 from logging import getLogger
 
+from bgp.bgp import BGP
 from utils.utils import ls
 
 log = getLogger()
@@ -31,9 +34,13 @@ def prefixes_iter(address, num):
         ipnum += 2**bits
 
 
-def delegations(filename):
+def delegations(filename, bgp: BGP):
     df = pd.read_csv(filename, sep='|', names=['Registry', 'CC', 'Type', 'Start', 'Value', 'Date', 'Status', 'Extensions'], comment='#', dtype=object)
-    asns = {row.Extensions: int(row.Start) for row in df[pd.notnull(df.Extensions) & (df.Type == 'asn')].itertuples(index=False)}
+    asns = defaultdict(int)
+    for row in df[pd.notnull(df.Extensions) & (df.Type == 'asn')].itertuples(index=False):
+        if bgp.conesize[row.Start] > bgp.conesize[asns[row.Extensions]]:
+            asns[row.Extensions] = row.Start
+    # asns = {row.Extensions: int(row.Start) for row in df[pd.notnull(df.Extensions) & (df.Type == 'asn')].itertuples(index=False)}
     prefixes = [(network, prefixlen, asns[row.Extensions]) for row in df[(df.Extensions.isin(asns)) & (df.Type == 'ipv4')].itertuples(index=False) for network, prefixlen in prefixes_iter(row.Start, int(row.Value))]
     return prefixes
 

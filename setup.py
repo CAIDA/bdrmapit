@@ -1,7 +1,5 @@
-from argparse import ArgumentParser
 from distutils.core import setup
 from multiprocessing import cpu_count
-import numpy as np
 
 from Cython.Build import cythonize
 

@@ -2,19 +2,20 @@
 import csv
 import re
 from argparse import ArgumentParser, FileType
+from typing import List
 
 import pandas as pd
 
-import rirparser
 from as2org import AS2Org
 from bgp.bgp import BGP
 from bgp.routing_table import RoutingTable
-from utils.utils import read_filenames, unique_everseen, max_num, File2
+from rir import rirparse
+from utils.utils import read_filenames, max_num, File2
 
 split = re.compile('[_,]')
 
 
-def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir=None, bgp=None, as2org=None):
+def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: List[str] = None, bgp=None, as2org=None):
     ixp_prefixes = pd.read_csv(ixp_prefixes, comment='#').iloc[:, 0] if ixp_prefixes is not None else []
     ixp_asns = set(pd.read_csv(ixp_asns, comment='#').iloc[:, 0]) if ixp_asns else []
     rt = RoutingTable()
@@ -30,7 +31,7 @@ def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir=None, b
             bgp_ixp.append((address, prefixlen))
     if rir is not None:
         for filename in rir:
-            rt.add_rir(rirparser.delegations(filename), ixp_asns)
+            rt.add_rir(rirparse(filename, bgp), ixp_asns)
     for address, prefixlen in bgp_ixp:
         rt.add_ixp(address, prefixlen)
     for prefix in ixp_prefixes:
@@ -94,7 +95,8 @@ def valid(asn):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('-p', '--prefixes', required=True, help='Regex for prefix-to-AS files in the standard CAIDA format.')
+    parser.add_argument('-p', '--prefixes', required=True,
+                        help='Regex for prefix-to-AS files in the standard CAIDA format.')
     parser.add_argument('-i', '--ixp-prefixes', help='List of IXP prefixes, one per line.')
     parser.add_argument('-r', '--rir', help='RIR extended delegation file regex.')
     parser.add_argument('-R', '--rels', help='AS relationship file in the standard CAIDA format.')
@@ -102,10 +104,11 @@ def main():
     parser.add_argument('-o', '--output', type=FileType('w'), default='-', help='Output file.')
     parser.add_argument('-a', '--as2org', help='AS-to-Org mappings in the standard CAIDA format.')
     args = parser.parse_args()
-    rir = list(read_filenames(args.rir)) if args.rir is not None else None
+    rir = list(read_filenames(args.rir)) if args.rir else None
     bgp = BGP(args.rels, args.cone)
     as2org = AS2Org(args.as2org, include_potaroo=False)
-    ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, ixp_asns=None, rir=rir, bgp=bgp, as2org=as2org)
+    ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, ixp_asns=None, rir=rir, bgp=bgp,
+                                 as2org=as2org)
     nodes = ip2as.nodes()
     writer = csv.writer(args.output)
     writer.writerow(['prefix', 'asn'])

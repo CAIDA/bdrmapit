@@ -5,7 +5,8 @@ import sqlite3
 import sys
 from argparse import ArgumentParser, FileType, Namespace
 from collections import Counter
-from multiprocessing import Queue, Process, Lock
+from multiprocessing import Queue, Process, Lock, Pipe
+from multiprocessing.connection import wait
 from typing import List
 
 import traceroute.parser as tp
@@ -19,6 +20,9 @@ adjq = Queue()
 dpq = Queue()
 distq = Queue()
 progressq = Queue()
+pconn, cconn = Pipe()
+plock = Lock()
+clock = Lock()
 ip2as: RoutingTable = None
 combine_lock = Lock()
 args: Namespace = None
@@ -27,7 +31,6 @@ args: Namespace = None
 def job(filename, output_type):
     ofilename = os.path.splitext(os.path.basename(filename))[0]
     ofile = os.path.join(args.output_dir, ofilename + '.db')
-    print(ofile)
     p = Parser(filename, output_type, ip2as)
     p.parse()
     p.to_sql(ofile)
@@ -41,7 +44,8 @@ def worker():
             break
         filename, output_type = args
         ofile = job(filename, output_type)
-        progressq.put(('worker', ofile))
+        with clock:
+            cconn.send(('worker', ofile))
 
 
 def _combine(queue, table):
@@ -60,6 +64,8 @@ def combine_addrs(output):
     addrs = set()
     for results in _combine(addrq, tp.ADDR):
         addrs.update(results)
+        with clock:
+            cconn.send((tp.ADDR, len(addrs)))
     with combine_lock:
         con = sqlite3.connect(output)
         insert_address(con, addrs)
@@ -70,6 +76,8 @@ def combine_adjs(output):
     adjs = set()
     for results in _combine(adjq, tp.ADJ):
         adjs.update(results)
+        with clock:
+            cconn.send((tp.ADJ, len(adjs)))
     with combine_lock:
         con = sqlite3.connect(output)
         insert_adjacency(con, adjs)
@@ -80,6 +88,8 @@ def combine_dps(output):
     dps = set()
     for results in _combine(dpq, tp.DP):
         dps.update(results)
+        with clock:
+            cconn.send((tp.DP, len(dps)))
     with combine_lock:
         con = sqlite3.connect(output)
         insert_destpair(con, dps)
@@ -91,6 +101,8 @@ def combine_dists(output):
     for results in _combine(distq, tp.DIST):
         for x, y, n in results:
             dists[x, y] += n
+        with clock:
+            cconn.send((tp.DIST, len(dists)))
     with combine_lock:
         con = sqlite3.connect(output)
         insert_distance(con, dists)
@@ -111,7 +123,7 @@ def run(files, poolsize, no_combine):
     combined = os.path.join(args.output_dir, 'combined.db')
     for filename in files:
         filesq.put(filename)
-    rlist = [progressq]
+    rlist = [pconn]
     workers: List[Process] = []
     for _ in range(poolsize):
         p = Process(target=worker)
@@ -122,22 +134,23 @@ def run(files, poolsize, no_combine):
     if not no_combine:
         tp.opendb(combined, remove=True)
         p = Process(target=combine_addrs, args=(combined,))
-        rlist.append(p.sentinel)
         p.start()
+        rlist.append(p.sentinel)
         p = Process(target=combine_adjs, args=(combined,))
-        rlist.append(p.sentinel)
         p.start()
+        rlist.append(p.sentinel)
         p = Process(target=combine_dps, args=(combined,))
-        rlist.append(p.sentinel)
         p.start()
+        rlist.append(p.sentinel)
         p = Process(target=combine_dists, args=(combined,))
-        rlist.append(p.sentinel)
         p.start()
+        rlist.append(p.sentinel)
     while True:
-        ready, _, _ = select.select(rlist, [], [])
+        ready = wait(rlist)
         for reader in ready:
-            if ready == progressq:
-                wtype, value = progressq.get()
+            if reader == pconn:
+                with plock:
+                    wtype, value = pconn.recv()
                 if wtype == 'worker':
                     completed += 1
                     if not no_combine:
@@ -146,13 +159,20 @@ def run(files, poolsize, no_combine):
                         dpq.put(value)
                         distq.put(value)
                 elif wtype == tp.ADDR:
-                    addrs = value
+                    addrs += 1
                 elif wtype == tp.ADJ:
-                    adjs = value
+                    adjs += 1
                 elif wtype == tp.DP:
-                    dps = value
+                    dps += 1
+                elif wtype == tp.DIST:
+                    dists += 1
                 else:
-                    dists = value
+                    print(wtype, value)
+                if completed == len(files):
+                    addrq.put(None)
+                    adjq.put(None)
+                    dpq.put(None)
+                    distq.put(None)
                 sys.stderr.write(
                     '\r\033[KWorkers {:,d} Addrs {:,d} Adjs {:,d} DPs {:,d} Dists {:,d}'.format(completed, addrs, adjs,
                                                                                                 dps, dists))
