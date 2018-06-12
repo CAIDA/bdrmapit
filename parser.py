@@ -24,16 +24,23 @@ combine_lock = Lock()
 args: Namespace = None
 
 
+def job(filename, output_type):
+    ofilename = os.path.splitext(os.path.basename(filename))[0]
+    ofile = os.path.join(args.output_dir, ofilename + '.db')
+    print(ofile)
+    p = Parser(filename, output_type, ip2as)
+    p.parse()
+    p.to_sql(ofile)
+    return ofile
+
+
 def worker():
     while True:
         args = filesq.get()
         if not args:
             break
         filename, output_type = args
-        p = Parser(filename, output_type, ip2as)
-        ofilename = os.path.splitext(os.path.basename(filename))[0]
-        ofile = os.path.join(args.output_dir, 'tmp', ofilename + '.db')
-        p.to_sql(ofile)
+        ofile = job(filename, output_type)
         progressq.put(('worker', ofile))
 
 
@@ -189,5 +196,13 @@ def main(vargs=None):
         files.extend(atlas_files)
     print('Number of files {:,d}'.format(len(files)))
     ip2as = RoutingTable.ip2as(args.ip2as) if ip2as is None else ip2as
-    run(files, args.poolsize, args.no_combine)
+    if len(files) > 1 and not (args.poolsize == 1 and args.no_combine):
+        run(files, args.poolsize, args.no_combine)
+    else:
+        for filename, output_type in files:
+            ofile = job(filename, output_type)
     print('Cleaning up...')
+
+
+if __name__ == '__main__':
+    main()

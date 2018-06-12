@@ -1,6 +1,7 @@
 from typing import List
 
-from traceroutecy.hop import Hop
+from bgp.routing_table import RoutingTable
+from traceroute.hop import Hop
 
 
 FORWARD = 1
@@ -12,12 +13,12 @@ class AbstractTrace:
 
     def __init__(self, j, ip2as=None):
         self.j = j
+        self.ip2as: RoutingTable = ip2as
         self.hops: List[Hop] = self._create_hopslist()
         self.allhops = list(self.hops)
         self.addrs = {h.addr for h in self.allhops if not h.private}
         self.prune_loops()
         self.remove_private()
-        self.ip2as = ip2as
         self.loop = False
 
     @property

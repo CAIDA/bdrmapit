@@ -3,6 +3,10 @@ from traceroute.hop import Hop
 
 
 class AtlasTrace(AbstractTrace):
+
+    def __init__(self, j, ip2as=None):
+        super().__init__(j, ip2as=ip2as)
+
     def __bool__(self):
         return 'result' in self.j
 

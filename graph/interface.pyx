@@ -8,6 +8,7 @@ cdef class Interface(Router):
         self.address = address
         self.asn = asn
         self.org = org
+        self.rid = ''
 
     def __repr__(self):
         return 'Interface<{}>'.format(self.name)

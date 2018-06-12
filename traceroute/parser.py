@@ -15,6 +15,9 @@ FORWARD = 1
 BACKWARD = 2
 BOTH = 3
 
+NONE = 0
+ADJEXCLUDE = 1
+
 ADDR = 'address'
 ADJ = 'adjacency'
 DP = 'destpair'
@@ -31,7 +34,7 @@ def opendb(filename, remove=False):
     cur = con.cursor()
     cur.execute('CREATE TABLE IF NOT EXISTS address (addr TEXT, num INT)')
     cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, distance INT, type INT, direction INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT, echo BOOLEAN)')
+    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT, echo BOOLEAN, exclude INT)')
     cur.execute('CREATE TABLE IF NOT EXISTS distance (hop1 TEXT, hop2 TEXT, distance INT)')
     cur.execute('CREATE TABLE IF NOT EXISTS seen (hop1 TEXT, hop2 TEXT, num INT)')
     cur.close()
@@ -66,11 +69,13 @@ class Parser:
             self.addrs.update((h.addr, h.num) for h in trace.allhops if not h.private)
             dest_asn = trace.dst_asn
             numhops = len(trace.hops)
+            if numhops == 0:
+                continue
             i = 0
             y = trace.hops[0]
             if not y.private:
-                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, trace.loop))
-            while i < numhops - 1:
+                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
+            while i < numhops - 2:
                 i += 1
                 x, y, z = y, trace.hops[i], (trace.hops[i + 1] if i < numhops else None)
                 distance = y.ttl - x.ttl
@@ -84,21 +89,22 @@ class Parser:
                     distance = 2
                 elif distance < 1:
                     distance = -1
-                if y.ttl == z.ttl - 1:
-                    yzdiff = y.num - z.num
-                    if yzdiff == 1 or yzdiff == -1:
-                        self.adjs.add((x.addr, z.addr, distance, z.icmp_type, BOTH))
-                        self.adjs.add((y.addr, x.addr, distance, x.icmp_type, FORWARD))
-                        self.adjs.add((y.addr, z.addr, distance, z.icmp_type, BACKWARD))
-                        self.dps.add((z.addr, dest_asn, z.icmp_type == 0))
-                        self.dists[(x.addr, z.addr)] += 1 if distance == 1 else -1
-                        self.dists[(y.addr, x.addr)] += 1 if distance == 1 else -1
-                        self.dists[(y.addr, z.addr)] += 1 if distance == 1 else -1
-                        y = z
-                        i += 1
-                        continue
+                # if y.ttl == z.ttl - 1:
+                #     yzdiff = y.num - z.num
+                #     if yzdiff == 1 or yzdiff == -1:
+                #         self.adjs.add((x.addr, z.addr, distance, z.icmp_type, BOTH))
+                #         self.adjs.add((y.addr, x.addr, distance, x.icmp_type, FORWARD))
+                #         self.adjs.add((y.addr, z.addr, distance, z.icmp_type, BACKWARD))
+                #         self.dps.add((y.addr, dest_asn, y.icmp_type == 0, ADJEXCLUDE))
+                #         self.dps.add((z.addr, dest_asn, z.icmp_type == 0, NONE))
+                #         self.dists[(x.addr, z.addr)] += 1 if distance == 1 else -1
+                #         self.dists[(y.addr, x.addr)] += 1 if distance == 1 else -1
+                #         self.dists[(y.addr, z.addr)] += 1 if distance == 1 else -1
+                #         y = z
+                #         i += 1
+                #         continue
                 self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BOTH))
-                self.dps.add((y.addr, dest_asn, y.icmp_type == 0))
+                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
                 self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
 
     def to_sql(self, filename):
@@ -126,7 +132,7 @@ def insert_adjacency(con: sqlite3.Connection, adjs: Set):
 
 def insert_destpair(con: sqlite3.Connection, dps: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO destpair (addr, asn, echo) VALUES (?, ?, ?)', dps)
+    cur.executemany('INSERT INTO destpair (addr, asn, echo, exclude) VALUES (?, ?, ?, ?)', dps)
     cur.close()
     con.commit()
 
