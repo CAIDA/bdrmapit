@@ -13,7 +13,6 @@ from utils.utils import read_filenames, unique_everseen, max_num, File2
 
 split = re.compile('[_,]')
 
-
 def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir=None, bgp=None, as2org=None):
     ixp_prefixes = pd.read_csv(ixp_prefixes, comment='#').iloc[:, 0] if ixp_prefixes is not None else []
     ixp_asns = set(pd.read_csv(ixp_asns, comment='#').iloc[:, 0]) if ixp_asns else []

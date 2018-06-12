@@ -1,4 +1,5 @@
 import re
+import os
 from functools import partial
 
 import lxml.html
@@ -94,21 +95,22 @@ cdef class AS2Org(dict):
         super().__init__(*args, **kwargs)
         self.data = {}
         ases, orgs = read_caida(filename, compression)
-        with open(mluckie) as f:
-            for line in f:
-                if line.strip() and line[0] != '#':
-                    asns = list(map(int, line.split()))
-                    for first in asns:
-                        if first in ases:
-                            asinfo = ases[first]
-                            forg = asinfo.org_id
-                            for asn in asns:
-                                old = ases[asn].asdict()
-                                if old['org_id'] != forg:
-                                    old['org_id'] = forg
-                                    old['source'] = mluckie
-                                    ases[asn] = ASInfo(**old)
-                            break
+        if os.path.isfile(mluckie):
+            with open(mluckie) as f:
+                for line in f:
+                    if line.strip() and line[0] != '#':
+                        asns = list(map(int, line.split()))
+                        for first in asns:
+                            if first in ases:
+                                asinfo = ases[first]
+                                forg = asinfo.org_id
+                                for asn in asns:
+                                    old = ases[asn].asdict()
+                                    if old['org_id'] != forg:
+                                        old['org_id'] = forg
+                                        old['source'] = mluckie
+                                        ases[asn] = ASInfo(**old)
+                                break
         for asn, asinfo in ases.items():
             self.data[asn] = Info(asinfo=asinfo, orginfo=orgs[asinfo.org_id])
         if include_potaroo:
@@ -146,14 +148,15 @@ def read_caida(filename, compression):
     orgs = {}
     method = None
     format_re = re.compile(r'# format:\s*(.*)')
-    with File2(filename, compression=compression) as f:
-        for line in f:
-            m = format_re.match(line)
-            if m:
-                fields = m.group(1).split('|')
-                method = partial(add_org, orgs) if fields[0] == 'org_id' else partial(add_asn, ases)
-            elif line[0] != '#' and method is not None:
-                method(line.split('|'))
+    if filename is not None:
+        with File2(filename, compression=compression) as f:
+            for line in f:
+                m = format_re.match(line)
+                if m:
+                    fields = m.group(1).split('|')
+                    method = partial(add_org, orgs) if fields[0] == 'org_id' else partial(add_asn, ases)
+                elif line[0] != '#' and method is not None:
+                    method(line.split('|'))
     return ases, orgs
 
 
