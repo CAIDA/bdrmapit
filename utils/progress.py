@@ -14,6 +14,7 @@ class Progress:
         self.current = start
         self.callback = callback if callback else str
         self.should_output = force or Progress.should_output
+        self._next = increment
 
     def iterator(self, iterable):
         """Iterates over iterable and automatically updates the status at the predefined increments."""
@@ -31,6 +32,12 @@ class Progress:
             self.finish()
         else:
             yield from iterable
+
+    def inc(self, amount=1):
+        self.current += amount
+        if self.current >= self._next:
+            self.show()
+            self._next += self.increment
 
     def finish(self):
         self.show()

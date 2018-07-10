@@ -71,6 +71,7 @@ cdef class HybridGraph:
         self.recho = DictSet()
         self.rmulti = DictSet()
         self.inexthop = DictSet()
+        self.imulti = DictSet()
         self.interface_succtype = {}
         self.rnh_ases = DictSet()
         self.re_ases = DictSet()
@@ -103,7 +104,7 @@ cdef class HybridGraph:
         cdef Router yrouter = self.interface_router[y]
         cdef int succtype
         if xrouter != yrouter:
-            if x.asn == y.asn or distance == 1:
+            if distance == 1:
                 if icmp_type != 0:
                     self.rnexthop[xrouter].add(y)
                     self.rnh_ases[xrouter, y].add(x.asn)
@@ -117,6 +118,7 @@ cdef class HybridGraph:
                 self.rmulti[xrouter].add(y)
                 self.rm_ases[xrouter, y].add(x.asn)
                 self.rm_interfaces[xrouter, y].add(x)
+                self.imulti[y].add(x)
             return 1
         return 0
 

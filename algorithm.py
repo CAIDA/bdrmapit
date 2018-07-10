@@ -1,13 +1,16 @@
 from collections import Counter, defaultdict
 from typing import List, Tuple, Set, Dict
 
-from graph.bdrmapit cimport Bdrmapit
-from graph.interface cimport Interface
-from graph.router cimport Router
-from updates_dict cimport Updates
+from graph.bdrmapit import Bdrmapit
+from graph.interface import Interface
+from graph.router import Router
+from log import Log
+from updates_dict import Updates
 from utils.progress import Progress
-from utils.utils cimport peek, max_num
+from utils.utils import peek, max_num
 
+
+log = Log()
 
 REALLOCATED_PREFIX = 500
 REALLOCATED_DEST = 1000
@@ -47,7 +50,8 @@ def graph_refinement(bdrmapit: Bdrmapit, routers: List[Router], interfaces: List
 
 def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, origins: Set[int], rupdates: Updates, iupdates: Updates):
     if isucc.asn == -1:
-        return max(origins, key=lambda x: (bdrmapit.bgp.conesize[x], -x)) if origins else -1
+        # return max(origins, key=lambda x: (bdrmapit.bgp.conesize[x], -x)) if origins else -1
+        return -1
     rsucc = bdrmapit.graph.interface_router[isucc]
     rsucc_asn = get(bdrmapit, rsucc, rupdates)[0]
     if isucc.asn == 0:
@@ -55,39 +59,43 @@ def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, orig
     if isucc.asn in origins:
         return isucc.asn
     if rsucc_asn > 0 and rsucc_asn != isucc.asn:
-        if any(asn == rsucc_asn or bdrmapit.bgp.rel(asn, rsucc_asn) for asn in origins):
-            dests = bdrmapit.graph.modified_router_dests[router]
-            if isucc.asn not in dests:
-                return rsucc_asn
+        log.debug('Third party: Router={}, RASN={}'.format(rsucc.name, rsucc_asn))
+        if not any(isucc.org == bdrmapit.as2org[asn] for asn in origins):
+            if any(asn == rsucc_asn or bdrmapit.bgp.rel(asn, rsucc_asn) for asn in origins):
+                dests = bdrmapit.graph.modified_router_dests[router]
+                if isucc.asn not in dests:
+                    return rsucc_asn
     succ_asn = iupdates[isucc][0]
     if succ_asn <= 0 or (rsucc_asn > 0 and succ_asn != rsucc_asn):
         return isucc.asn
     return succ_asn
 
 
-cdef bint reallocated_test(Bdrmapit bdrmapit, int oasn, int newasn) except -1:
-    cdef int conesize = bdrmapit.bgp.conesize[newasn]
+def reallocated_test(bdrmapit: Bdrmapit, oasn, newasn):
+    conesize = bdrmapit.bgp.conesize[newasn]
+    log.debug('Reallocated Test: conesize={} < 5 and conesize={} < oldcone={} and not peer_rel({}, {}) = {}'.format(conesize, conesize, bdrmapit.bgp.conesize[oasn], newasn, oasn, bdrmapit.bgp.peer_rel(newasn, oasn)))
     return conesize <= 5 and conesize < bdrmapit.bgp.conesize[oasn] and not bdrmapit.bgp.peer_rel(newasn, oasn)
 
 
-cdef int reallocated(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, set edges: Set[Interface], int rtype: int, Updates rupdates: Updates, succs: Counter, succ_origins: Dict[int, Set], iasns: Counter) except -1:
-    cdef Interface isucc
-    cdef int oasn, rasn, newasn, num
-    cdef set isuccs, prefixes, rasns
+def reallocated(bdrmapit: Bdrmapit, router: Router, edges: Set[Interface], rtype: int, rupdates: Updates, succs: Counter, succ_origins: Dict[int, Set], iasns: Counter):
     if len(edges) > 1:
         same = defaultdict(list)
-        for isucc in edges:
-            if isucc.asn in get_origins(bdrmapit, router, isucc, rtype):
-                same[isucc].append(isucc)
+        for s in edges:
+            if s.asn in get_origins(bdrmapit, router, s, rtype):
+                same[s.asn].append(s)
+        log.debug('Same: {}'.format(same))
         for oasn, isuccs in same.items():
             if len(isuccs) > 1:
-                prefixes = {isucc.address.rpartition('.')[0] for isucc in isuccs}
+                prefixes = {s.address.rpartition('.')[0] for s in isuccs}
+                log.debug('Prefixes: {}'.format(prefixes))
                 if len(prefixes) == 1:
-                    rsuccs = {bdrmapit.graph.interface_router[isucc] for isucc in isuccs}
+                    rsuccs = {bdrmapit.graph.interface_router[s] for s in isuccs}
                     if all(get(bdrmapit, rsucc, rupdates)[-1] < REALLOCATED_PREFIX for rsucc in rsuccs):
                         rasns = {get(bdrmapit, rsucc, rupdates)[0] for rsucc in rsuccs}
+                        log.debug('RASNs: {}'.format(rasns))
                         if len(rasns) > 1 or oasn in rasns:
                             mrdests = bdrmapit.graph.modified_router_dests[router]
+                            log.debug('Modified Dests: {}'.format(mrdests))
                             if len(mrdests) == 1:
                                 rasns = mrdests
                         if len(rasns) == 1:
@@ -101,30 +109,34 @@ cdef int reallocated(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, set edg
     return 0
 
 
-cdef tuple hidden_asn(Bdrmapit bdrmapit: Bdrmapit, iasns, int asn, int utype):
-    cdef set intersection = {a for o in iasns for a in bdrmapit.bgp.customers[o]} & bdrmapit.bgp.providers[asn]
+def hidden_asn(bdrmapit: Bdrmapit, iasns, asn, utype):
+    intersection = {a for o in iasns for a in bdrmapit.bgp.customers[o]} & bdrmapit.bgp.providers[asn]
     if len(intersection) == 1:
         asn = peek(intersection)
+        log.debug('Hidden: {}'.format(asn))
         return asn, HIDDEN_INTER + utype
+    log.debug('Missing: {}-{}'.format(iasns, asn))
     return asn, HIDDEN_NOINTER + utype
 
 
-cdef tuple annotate_router(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, Updates rupdates: Updates, Updates iupdates: Updates):
-    cdef int utype = 0, rtype, succ_asn, sasn, conesize, sasn2, itype, rasn, iasn, x, o, asn, num, vasn, vr
-    cdef set edges, origins, rasns, remaining
-    cdef Interface isucc
-    cdef list asns
+def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupdates: Updates):
+    utype = 0
     edges, rtype = get_edges(bdrmapit, router)
+    log.debug('Edges={}, Rtype={}'.format(len(edges), rtype))
     succs = Counter()
     succ_origins = defaultdict(set)
     for isucc in edges:
         origins = {o for o in get_origins(bdrmapit, router, isucc, rtype) if o > 0}
+        log.debug('Succ={}, ASN={}, Origins={}'.format(isucc.address, isucc.asn, origins))
         succ_asn = router_heuristics(bdrmapit, router, isucc, origins, rupdates, iupdates)
+        log.debug('Heuristic: {}'.format(succ_asn))
         if succ_asn > 0:
             succs[succ_asn] += 1
             succ_origins[succ_asn].update(origins)
+    log.debug('Succs: {}'.format(succs))
     iasns = Counter(i.asn for i in bdrmapit.graph.router_interfaces[router] if i.asn > 0)
     utype += reallocated(bdrmapit, router, edges, rtype, rupdates, succs, succ_origins, iasns)
+    log.debug('IASNS: {}'.format(iasns))
     if len(succs) == 1 or len({bdrmapit.as2org[sasn] for sasn in succs}) == 1:
         sasn = peek(succs) if len(succs) == 1 else max(succs, key=lambda x: (bdrmapit.bgp.conesize[x], -x))
         if sasn in iasns:
@@ -132,21 +144,25 @@ cdef tuple annotate_router(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, U
         if succs[sasn] > sum(iasns.values()) / 4:
             for iasn in succ_origins[sasn]:
                 if bdrmapit.bgp.customer_rel(sasn, iasn):
+                    log.debug('Provider: {}->{}'.format(iasn, sasn))
                     return sasn, utype + SINGLE_SUCC_4
             conesize = bdrmapit.bgp.conesize[sasn]
             if not any(bdrmapit.bgp.rel(iasn, sasn) for iasn in succ_origins[sasn]) and any(bdrmapit.bgp.conesize[iasn] > conesize for iasn in succ_origins[sasn]):
                 return hidden_asn(bdrmapit, succ_origins[sasn], sasn, utype)
             for isucc in edges:
                 sasn2, _, itype = iupdates[isucc]
-                if sasn2 == sasn and itype == 1:
+                rasn = get(bdrmapit, bdrmapit.graph.interface_router[isucc], rupdates)[0]
+                if sasn2 == sasn and ((rasn == sasn and itype == 1) or rasn != sasn):
                     return sasn, utype + IUPDATE
             rasns = set()
             for isucc in edges:
                 rasn = get(bdrmapit, bdrmapit.graph.interface_router[isucc], rupdates)[0]
                 rasns.add(rasn if rasn > 0 else sasn)
+            log.debug('RASNS={}, SASN={}'.format(rasns, sasn))
             if sasn not in rasns:
                 return sasn, utype + SINGLE_SUCC_RASN
     votes = succs + iasns
+    log.debug('Votes: {}'.format(votes))
     if len(succs) > 1:
         if not any(iasn in succs for iasn in iasns):
             for iasn in iasns:
@@ -167,13 +183,16 @@ cdef tuple annotate_router(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, U
         return -1, -1
     allorigins = {o for os in succ_origins.values() for o in os}
     remaining = succs.keys() - allorigins
+    log.debug('AllOrigins={}, Remaining={}'.format(allorigins, remaining))
     if len(remaining) == 1:
         asn = peek(remaining)
         if any(bdrmapit.bgp.customer_rel(asn, iasn) for iasn in allorigins):
             num = votes[asn]
-            if num >= (sum(votes.values()) - num) / 4:
+            log.debug('Votes test: num={} > sum(votes)={}'.format(num, sum(votes.values())))
+            if num >= (sum(votes.values()) - num) / 2:
                 return asn, utype + REMAINING_4
     votes_rels = [vasn for vasn in votes if vasn in iasns or any(bdrmapit.bgp.rel(iasn, vasn) for iasn in iasns)]
+    log.debug('Vote Rels: {}'.format(votes_rels))
     if len(votes_rels) < 2:
         votes_rels = votes
     else:
@@ -194,10 +213,8 @@ cdef tuple annotate_router(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, U
     return asn, utype
 
 
-def annotate_routers(Bdrmapit bdrmapit: Bdrmapit, Updates rupdates: Updates, Updates iupdates: Updates, list routers: List[Router] = None, int increment=100000):
-    cdef Updates new_updates = rupdates.copy()
-    cdef Router router
-    cdef int asn, utype
+def annotate_routers(bdrmapit: Bdrmapit, rupdates: Updates, iupdates: Updates, routers: List[Router] = None, increment=100000):
+    new_updates: Updates = rupdates.copy()
     if routers is None:
         routers = bdrmapit.graph.routers_succ
     pb = Progress(len(routers), 'Annotating routers', increment=increment)
@@ -207,12 +224,10 @@ def annotate_routers(Bdrmapit bdrmapit: Bdrmapit, Updates rupdates: Updates, Upd
     return new_updates
 
 
-def annotate_interfaces(Bdrmapit bdrmapit: Bdrmapit, Updates rupdates: Updates, Updates iupdates: Updates, list interfaces: List[Interface] = None):
-    cdef Updates new_updates = iupdates.copy()
-    cdef Interface interface
-    cdef int asn, utype
+def annotate_interfaces(bdrmapit: Bdrmapit, rupdates: Updates, iupdates: Updates, interfaces: List[Interface] = None):
     if interfaces is None:
         interfaces = bdrmapit.graph.interfaces_pred
+    new_updates: Updates = iupdates.copy()
     pb = Progress(len(interfaces), 'Adding links', increment=200000)
     for interface in pb.iterator(interfaces):
         if interface.asn >= 0:
@@ -221,40 +236,45 @@ def annotate_interfaces(Bdrmapit bdrmapit: Bdrmapit, Updates rupdates: Updates, 
     return new_updates
 
 
-cdef tuple annotate_interface(Bdrmapit bdrmapit: Bdrmapit, Interface interface: Interface, Updates rupdates: Updates):
-    cdef set edges = set(bdrmapit.graph.inexthop.get(interface))
-    cdef Interface ipred
-    cdef Router rpred
-    cdef int asn, utype
-    cdef list asns
+def annotate_interface(bdrmapit: Bdrmapit, interface, rupdates: Updates):
+    edges = set(bdrmapit.graph.inexthop.get(interface))
     votes = Counter()
     for ipred in edges:
         rpred = bdrmapit.graph.interface_router[ipred]
-        if interface.org == ipred.org:
+        asn, _, _ = rupdates[rpred]
+        log.debug('Addr={}, Router={}, ASN={}, RASN={}'.format(ipred.address, rpred.name, ipred.asn, asn))
+        prefix, _, num = interface.address.rpartition('.')
+        iprefix, _, inum = ipred.address.rpartition('.')
+        same = False
+        if prefix == iprefix:
+            if -1 <= int(num) - int(inum) <= 1:
+                log.debug('Prefix={}, Diff={}, Same={}'.format(prefix, int(num) - int(inum), same))
+                same = True
+        if not same and interface.org == ipred.org:
             asn = ipred.asn
         else:
-            asn, _, _ = rupdates[rpred]
+            log.debug('Router={}, RASN={}'.format(rpred.name, asn))
             if asn == -1:
                 asn = ipred.asn
         votes[asn] += 1
+    log.debug('Votes: {}'.format(votes))
     if len(votes) == 1:
         return peek(votes), 1 if len(edges) > 1 else 0
     asns = max_num(votes, key=votes.__getitem__)
-    asn = min(asns, key=lambda x: (bdrmapit.bgp.conesize[x], -x))
+    asn = max(asns, key=lambda x: (bdrmapit.bgp.conesize[x], -x))
     utype = 1 if len(asns) == 1 and len(edges) > 1 else 2
     return asn, utype
 
 
-cdef tuple get(Bdrmapit bdrmapit: Bdrmapit, Router r: Router, Updates updates: Updates):
-    cdef tuple result = bdrmapit.lhupdates[r]
+def get(bdrmapit, r: Router, updates: Updates):
+    result = bdrmapit.lhupdates[r]
     if result[0] == -1:
         return updates[r]
     return result
 
 
-cdef tuple get_edges(Bdrmapit bdrmapit: Bdrmapit, Router router: Router):
-    cdef set edges = bdrmapit.graph.rnexthop.get(router)
-    cdef int rtype
+def get_edges(bdrmapit: Bdrmapit, router):
+    edges = bdrmapit.graph.rnexthop.get(router)
     if edges:
         rtype = 1
     else:
@@ -267,7 +287,7 @@ cdef tuple get_edges(Bdrmapit bdrmapit: Bdrmapit, Router router: Router):
     return set(edges), rtype
 
 
-cdef set get_origins(Bdrmapit bdrmapit: Bdrmapit, Router router: Router, Interface interface: Interface, int rtype: int):
+def get_origins(bdrmapit: Bdrmapit, router: Router, interface: Interface, rtype):
     if rtype == 1:
         return bdrmapit.graph.rnh_ases[router, interface]
     elif rtype == 2:

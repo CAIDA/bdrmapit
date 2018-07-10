@@ -1,9 +1,7 @@
 # bdrmapIT
 This is the code to run bdrmapIT. There are a lot of files but only a few need to be run from the command line.
 
-Running <tt>bdrmapIT</tt> requires at least python3.6. (Developed under and tested for 3.6+, but might work with older versions.)
-
-## Using virtualenv
+To run bordermap it, you can use virtualenv
 ```bash
 $ virtualenv run
 $ cd run
@@ -12,24 +10,7 @@ $ cd run
 This will install the libraries you need
 ```bash
 $ source bin/activate
-$ pip install -r ../requirememts.txt
-```
-
-### Using Anaconda
-```bash
-$ conda create -n bdrmapit python=3
-$ conda activate bdrmapit
-```
-
-This will install the libraries you need
-```bash
-$ pip install -r requirememts.txt
-```
-
-## Compiling and Installing Cython extensions
-Presuming you have a C compiler, this step should be straightforward. In the top-level directory, run the [setup.py](setup.py) script. The following command should create the extensions necessary to run all of the other scripts.
-```bash
-python setup.py build_ext --inplace
+$ pip install -r  ../requirememts.txt
 ```
 
 ## Generating IP-to-AS Mappings
@@ -46,4 +27,4 @@ In order to generate the graph used by bdrmapIT, the the [parser](parser.md) scr
 |dists.csv|Indicates whether interface adjacencies are actually neighbors, or seperated by other routers.|
 
 ## Running bdrmapIT
-The last step is to actually run the [bdrmapit.py](bdrmapit.md) script, which runs the bdrmapIT algorithm. This produces a single (possibly large) sqlite database file, described in its readme.
+The last step is to actually run the [bdrmapit.py](bdrmapit.md) script, which runs the bdrmapIT algorithm. This produces a single (possibly large) CSV output file, described in its readme.

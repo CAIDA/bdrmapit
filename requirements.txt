@@ -4,6 +4,8 @@ beautifulsoup4
 lxml
 requests
 numpy
+scipy
 pandas
 py-radix
 python-dateutil
+networkx

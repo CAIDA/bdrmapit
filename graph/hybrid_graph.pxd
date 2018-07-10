@@ -29,6 +29,7 @@ cdef class HybridGraph:
     cdef public DictSet recho
     cdef public DictSet rmulti
     cdef public DictSet inexthop
+    cdef public DictSet imulti
     cdef public dict interface_succtype
     cdef public DictSet rnh_ases
     cdef public DictSet re_ases

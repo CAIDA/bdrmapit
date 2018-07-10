@@ -104,4 +104,4 @@ class RoutingTable(Radix):
 
 
 cpdef bint valid(long asn) except -1:
-    return 0 < asn < 64496 or 131071 < asn < 4200000000
+    return asn != 23456 and 0 < asn < 64496 or 131071 < asn < 4200000000

@@ -52,10 +52,15 @@ cdef class CreateObjs:
         cdef set adjs
         cdef str h1, h2
         cur = self.con.cursor()
-        print('Reading distances')
+        Progress.message('Reading distances')
         adjs = set(cur.execute('select hop1, hop2 from distance where distance > 0'))
         pb = Progress(message='Adding neighbors', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
-        for h1, h2, dist, icmp_type in pb.iterator(cur.execute('select hop1, hop2, distance, type from adjacency where distance > 0')):
+        try:
+            edges = cur.execute('select hop1, hop2, distance, type from adj2 where distance > 0')
+        except:
+            print('Reverting')
+            edges = cur.execute('select hop1, hop2, distance, type from adjacency where distance > 0')
+        for h1, h2, dist, icmp_type in pb.iterator(edges):
             if (h1, h2) not in adjs:
                 dist = 10
             used += self.g.add_edge(h1, h2, dist, icmp_type)

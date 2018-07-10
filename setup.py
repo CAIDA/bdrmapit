@@ -1,4 +1,5 @@
 from distutils.core import setup
+from multiprocessing import cpu_count
 
 from Cython.Build import cythonize
 
@@ -7,7 +8,6 @@ setup(
     ext_modules=cythonize([
         'utils/utils.pyx',
         'utils/progress.py',
-        'utils/subprocess_pool.py',
         'bgp/routing_table.pyx',
         'bgp/bgp.pyx',
         'graph/bdrmapit.pyx',
@@ -16,10 +16,8 @@ setup(
         'graph/hybrid_graph.pyx',
         'as2org.pyx',
         'updates_dict.pyx',
-        'traceroute/abstract_parser.py',
-        'traceroute/parser_pool_sqlite.py',
-        'create_objs_sqlite.pyx',
-        'algorithm_cy.pyx',
-        'last_hop.pyx'
+        'create_objs.pyx',
+        'traceroute/hop.pyx'
     ], nthreads=0)
+    # ext_modules=cythonize(['ip2as.py'])
 )
