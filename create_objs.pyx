@@ -21,11 +21,11 @@ cdef class CreateObjs:
         cdef int i = 0
         cur = self.con.cursor()
         pb = Progress(message='Addresses', increment=increment, callback=lambda: '{:,d}'.format(i))
-        for addr, in pb.iterator(cur.execute('SELECT addr FROM address')):
+        for addr, num in pb.iterator(cur.execute('SELECT addr, num FROM address')):
             asn = self.ip2as[addr]
             if asn > -2:
                 org = self.as2org[asn]
-                self.g.add_interface(addr, asn, org)
+                self.g.add_interface(addr, asn, org, num)
                 i += 1
         cur.close()
 
@@ -33,18 +33,19 @@ cdef class CreateObjs:
         cdef str line, n, address, nid
         cdef list addresses
         cdef Router router
-        cdef int i = 0
-        pb = Progress(message='Reading nodes', increment=increment, callback=lambda: 'Routers {:,d}'.format(i))
+        cdef int i = 0, j = 0
+        pb = Progress(message='Reading nodes', increment=increment, callback=lambda: 'Routers {:,d} Included {:,d}'.format(i, j))
         with File2(filename) as f:
             for line in pb.iterator(f):
                 if line[0] != '#':
                     _, n, *addresses = line.split()
                     addresses = [address for address in addresses if address in self.g.address_interface]
                     if len(addresses) > 1:
-                        nid = n[:-1]
-                        router = self.g.add_router(nid)
-                        self.g.group_interfaces(router, addresses)
                         i += 1
+                    nid = n[:-1]
+                    router = self.g.add_router(nid)
+                    self.g.group_interfaces(router, addresses)
+                    j += 1
         self.g.router_interfaces.finalize()
 
     def create_graph(self, int increment=1000000):

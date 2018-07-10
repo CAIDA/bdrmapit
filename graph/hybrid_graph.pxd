@@ -42,7 +42,7 @@ cdef class HybridGraph:
     cdef public list routers_nosucc
     cdef public list interfaces_pred
 
-    cdef void add_interface(self, str address, int asn, str org) except *
+    cdef void add_interface(self, str address, int asn, str org, long num) except *
     cdef Router add_router(self, str name)
     cdef void add_dest(self, str address, int asn) except *
     cdef int add_edge(self, str xaddr, str yaddr, int distance, int icmp_type) except -1

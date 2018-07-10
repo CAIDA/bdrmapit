@@ -1,17 +1,15 @@
-#!/usr/bin/env python
 import math
 import socket
 import struct
 from argparse import ArgumentParser
-from collections import defaultdict
 
-from utils.progress import Progress
+from bgp.bgp import BGP
 from utils.utils import File2
 
 
-def rirparse(filename):
+def rirparse(filename, bgp: BGP):
     with File2(filename) as f:
-        asns = defaultdict(set)
+        asns = {}
         for line in f:
             splits = line.split('|')
             if len(splits) < 8:
@@ -20,9 +18,12 @@ def rirparse(filename):
             if not extensions:
                 continue
             if rtype == 'asn':
-                # asn = int(start)
-                asn = start
-                asns[extensions].add(asn)
+                asn = int(start)
+                current = asns.get(extensions)
+                if not current:
+                    asns[extensions] = asn
+                elif bgp.conesize[current] >= bgp.conesize[asn]:
+                    asns[extensions] = asn
             elif rtype == 'ipv4':
                 asn = asns.get(extensions)
                 if not asn:
@@ -52,23 +53,12 @@ def prefixes_iter(address, num):
         ipnum += 2**bits
 
 
-def main():
+if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-f', '--files')
     parser.add_argument('-r', '--rels')
     parser.add_argument('-c', '--cone')
-    parser.add_argument('-o', '--output')
     args = parser.parse_args()
     with File2(args.files) as f:
         files = [line.strip() for line in f]
-    prefixes = defaultdict(set)
-    pb = Progress(len(files), 'Parsing RIR delegations', callback=lambda: 'Prefixes {:,d}'.format(len(prefixes)))
-    for filename in pb.iterator(files):
-        for network, prefixlen, asns in rirparse(filename):
-            prefixes[network, prefixlen].update(asns)
-    with open(args.output, 'w') as f:
-        f.writelines('{}\t{}\t{}\n'.format(network, prefixlen, '_'.join(asns)) for (network, prefixlen), asns in prefixes.items())
-
-
-if __name__ == '__main__':
-    main()
+    

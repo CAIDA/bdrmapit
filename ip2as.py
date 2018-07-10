@@ -15,7 +15,7 @@ from utils.utils import read_filenames, max_num, File2
 split = re.compile('[_,]')
 
 
-def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: List[str] = None, bgp=None, as2org=None):
+def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: str = None, bgp: BGP = None, as2org=None):
     ixp_prefixes = pd.read_csv(ixp_prefixes, comment='#').iloc[:, 0] if ixp_prefixes is not None else []
     ixp_asns = set(pd.read_csv(ixp_asns, comment='#').iloc[:, 0]) if ixp_asns else []
     rt = RoutingTable()
@@ -30,8 +30,12 @@ def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: List[s
         else:
             bgp_ixp.append((address, prefixlen))
     if rir is not None:
-        for filename in rir:
-            rt.add_rir(rirparse(filename, bgp), ixp_asns)
+        with File2(rir) as f:
+            for line in f:
+                prefix, prefixlen, asns = line.split()
+                prefixlen = int(prefixlen)
+                asn = max(map(int, asns.split('_')), key=lambda x: (bgp.conesize[x], -x))
+                rt.add_rir(prefix, prefixlen, asn)
     for address, prefixlen in bgp_ixp:
         rt.add_ixp(address, prefixlen)
     for prefix in ixp_prefixes:
@@ -104,11 +108,9 @@ def main():
     parser.add_argument('-o', '--output', type=FileType('w'), default='-', help='Output file.')
     parser.add_argument('-a', '--as2org', help='AS-to-Org mappings in the standard CAIDA format.')
     args = parser.parse_args()
-    rir = list(read_filenames(args.rir)) if args.rir else None
     bgp = BGP(args.rels, args.cone)
     as2org = AS2Org(args.as2org, include_potaroo=False)
-    ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, ixp_asns=None, rir=rir, bgp=bgp,
-                                 as2org=as2org)
+    ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, ixp_asns=None, rir=args.rir, bgp=bgp, as2org=as2org)
     nodes = ip2as.nodes()
     writer = csv.writer(args.output)
     writer.writerow(['prefix', 'asn'])

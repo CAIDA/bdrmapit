@@ -84,8 +84,8 @@ cdef class HybridGraph:
         self.routers_nosucc = []
         self.interfaces_pred = []
 
-    cdef void add_interface(self, str address, int asn, str org) except *:
-        cdef Interface interface = Interface(address, asn, org)
+    cdef void add_interface(self, str address, int asn, str org, long num) except *:
+        cdef Interface interface = Interface(address, asn, org, num)
         self.address_interface[address] = interface
 
     cdef Router add_router(self, str name):

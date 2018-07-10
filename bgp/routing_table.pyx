@@ -90,13 +90,8 @@ class RoutingTable(Radix):
                     self.delete(node.prefix)
             self.add_prefix(-2, prefix)
 
-    def add_rir(self, rir, ixp_asns):
-        rirrows = []
-        for address, prefixlen, asn in rir:
-            if asn not in ixp_asns:
-                if not self.search_covering(address, prefixlen):
-                    rirrows.append((address, prefixlen, asn))
-        for address, prefixlen, asn in rirrows:
+    def add_rir(self, address, prefixlen, asn):
+        if not self.search_covering(address, prefixlen):
             self.add_prefix(asn, address, prefixlen)
 
     def isglobal(self, str address):

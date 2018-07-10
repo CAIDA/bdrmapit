@@ -48,25 +48,26 @@ def graph_refinement(bdrmapit: Bdrmapit, routers: List[Router], interfaces: List
     return rupdates, iupdates
 
 
-def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, origins: Set[int], rupdates: Updates, iupdates: Updates):
+def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, origins: Set[int], rtype: int, rupdates: Updates, iupdates: Updates):
     if isucc.asn == -1:
         # return max(origins, key=lambda x: (bdrmapit.bgp.conesize[x], -x)) if origins else -1
         return -1
     rsucc = bdrmapit.graph.interface_router[isucc]
     rsucc_asn = get(bdrmapit, rsucc, rupdates)[0]
+    succ_asn = iupdates[isucc][0]
+    log.debug('\tASN={}, RASN={}, IASN={}'.format(isucc.asn, rsucc_asn, succ_asn))
     if isucc.asn == 0:
         return rsucc_asn
     if isucc.asn in origins:
         return isucc.asn
     if rsucc_asn > 0 and rsucc_asn != isucc.asn:
-        log.debug('Third party: Router={}, RASN={}'.format(rsucc.name, rsucc_asn))
+        log.debug('\tThird party: Router={}, RASN={}'.format(rsucc.name, rsucc_asn))
         if not any(isucc.org == bdrmapit.as2org[asn] for asn in origins):
             if any(asn == rsucc_asn or bdrmapit.bgp.rel(asn, rsucc_asn) for asn in origins):
                 dests = bdrmapit.graph.modified_router_dests[router]
                 if isucc.asn not in dests:
                     return rsucc_asn
-    succ_asn = iupdates[isucc][0]
-    if succ_asn <= 0 or (rsucc_asn > 0 and succ_asn != rsucc_asn):
+    if rtype == 2 or succ_asn <= 0 or (rsucc_asn > 0 and isucc.asn != rsucc_asn):
         return isucc.asn
     return succ_asn
 
@@ -74,7 +75,7 @@ def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, orig
 def reallocated_test(bdrmapit: Bdrmapit, oasn, newasn):
     conesize = bdrmapit.bgp.conesize[newasn]
     log.debug('Reallocated Test: conesize={} < 5 and conesize={} < oldcone={} and not peer_rel({}, {}) = {}'.format(conesize, conesize, bdrmapit.bgp.conesize[oasn], newasn, oasn, bdrmapit.bgp.peer_rel(newasn, oasn)))
-    return conesize <= 5 and conesize < bdrmapit.bgp.conesize[oasn] and not bdrmapit.bgp.peer_rel(newasn, oasn)
+    return conesize <= 3 and conesize < bdrmapit.bgp.conesize[oasn] and not bdrmapit.bgp.peer_rel(newasn, oasn)
 
 
 def reallocated(bdrmapit: Bdrmapit, router: Router, edges: Set[Interface], rtype: int, rupdates: Updates, succs: Counter, succ_origins: Dict[int, Set], iasns: Counter):
@@ -83,7 +84,8 @@ def reallocated(bdrmapit: Bdrmapit, router: Router, edges: Set[Interface], rtype
         for s in edges:
             if s.asn in get_origins(bdrmapit, router, s, rtype):
                 same[s.asn].append(s)
-        log.debug('Same: {}'.format(same))
+        if log.isdebug():
+            log.debug('Same: {}'.format({k: [i.address for i in v] for k, v in same.items()}))
         for oasn, isuccs in same.items():
             if len(isuccs) > 1:
                 prefixes = {s.address.rpartition('.')[0] for s in isuccs}
@@ -117,6 +119,13 @@ def hidden_asn(bdrmapit: Bdrmapit, iasns, asn, utype):
         return asn, HIDDEN_INTER + utype
     log.debug('Missing: {}-{}'.format(iasns, asn))
     return asn, HIDDEN_NOINTER + utype
+    # return max(iasns, key=lambda x: (iasns[x], -bdrmapit.bgp.conesize[x], x)), HIDDEN_NOINTER + utype
+
+
+def conetest(bdrmapit: Bdrmapit, asn):
+    org = bdrmapit.as2org[asn]
+    cone = bdrmapit.bgp.cone[asn]
+    return sum(1 for customer in cone if bdrmapit.as2org[customer] != org)
 
 
 def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupdates: Updates):
@@ -128,7 +137,7 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
     for isucc in edges:
         origins = {o for o in get_origins(bdrmapit, router, isucc, rtype) if o > 0}
         log.debug('Succ={}, ASN={}, Origins={}'.format(isucc.address, isucc.asn, origins))
-        succ_asn = router_heuristics(bdrmapit, router, isucc, origins, rupdates, iupdates)
+        succ_asn = router_heuristics(bdrmapit, router, isucc, origins, rtype, rupdates, iupdates)
         log.debug('Heuristic: {}'.format(succ_asn))
         if succ_asn > 0:
             succs[succ_asn] += 1
@@ -149,6 +158,7 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
             conesize = bdrmapit.bgp.conesize[sasn]
             if not any(bdrmapit.bgp.rel(iasn, sasn) for iasn in succ_origins[sasn]) and any(bdrmapit.bgp.conesize[iasn] > conesize for iasn in succ_origins[sasn]):
                 return hidden_asn(bdrmapit, succ_origins[sasn], sasn, utype)
+                # return hidden_asn(bdrmapit, iasns, sasn, utype)
             for isucc in edges:
                 sasn2, _, itype = iupdates[isucc]
                 rasn = get(bdrmapit, bdrmapit.graph.interface_router[isucc], rupdates)[0]
@@ -189,7 +199,7 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
         if any(bdrmapit.bgp.customer_rel(asn, iasn) for iasn in allorigins):
             num = votes[asn]
             log.debug('Votes test: num={} > sum(votes)={}'.format(num, sum(votes.values())))
-            if num >= (sum(votes.values()) - num) / 2:
+            if bdrmapit.bgp.conesize[asn] <= 0 and num >= (max(votes.values())) / 2:
                 return asn, utype + REMAINING_4
     votes_rels = [vasn for vasn in votes if vasn in iasns or any(bdrmapit.bgp.rel(iasn, vasn) for iasn in iasns)]
     log.debug('Vote Rels: {}'.format(votes_rels))
@@ -202,6 +212,10 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
                     if bdrmapit.as2org[vr] == bdrmapit.as2org[vasn]:
                         votes[vr] += votes.pop(vasn, 0)
     asns = max_num(votes_rels, key=votes.__getitem__)
+    othermax = max(votes, key=votes.__getitem__)
+    if rtype != 3 and votes[othermax] > votes[asns[0]] * 4:
+        utype += 3000
+        return othermax, utype
     if len(asns) == 1:
         asn = asns[0]
         utype += VOTE_SINGLE
@@ -261,7 +275,7 @@ def annotate_interface(bdrmapit: Bdrmapit, interface, rupdates: Updates):
     if len(votes) == 1:
         return peek(votes), 1 if len(edges) > 1 else 0
     asns = max_num(votes, key=votes.__getitem__)
-    asn = max(asns, key=lambda x: (bdrmapit.bgp.conesize[x], -x))
+    asn = max(asns, key=lambda x: (x == interface.asn, bdrmapit.bgp.conesize[x], -x))
     utype = 1 if len(asns) == 1 and len(edges) > 1 else 2
     return asn, utype
 
