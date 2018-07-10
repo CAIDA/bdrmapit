@@ -1,24 +1,18 @@
 # bdrmapIT
-This is the code to run bdrmapIT. There are a lot of files but only a few need to be run from the command line.
+This is the code to run <tt>bdrmapIT</tt>. There are a lot of files but only a few need to be run from the command line.
 
 ## Setting up the Environment
-It is recommended to run bdrmapIT in its own environment, such as virtualenv of anaconda:
+It is recommended to run <tt>bdrmapIT</tt> in its own environment, such as [Virtualenv](https://virtualenv.pypa.io/en/stable/) of [Anaconda](https://www.anaconda.com/):
 
-### virtualenv
-To run bdrmapIT, you can use virtualenv
+### Virtualenv
 ```bash
-$ virtualenv run
-$ cd run
-```
-
-This will install the libraries you need
-```bash
-$ source bin/activate
-$ pip install -r  ../requirememts.txt
+$ virtualenv bdrmapit  # Create the environment
+$ cd bdrmapit  # Enter the environment subdirectory
+$ source bin/activate  # Activate the environment
+$ pip install -r  ../requirememts.txt  # Install required packages
 ```
 
 ### Anaconda
-To set up the environment,
 ```bash
 $ conda create -n bdrmapit python=3  # Create the environment
 $ conda activate bdrmapit  # Activate the environment
