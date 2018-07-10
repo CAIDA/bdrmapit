@@ -1,10 +1,12 @@
 import re
+import os
 from functools import partial
 
 import lxml.html
 
 from utils.utils import File2
 
+import sys
 
 cdef class OrgInfo:
     def __init__(self, org_id, changed, org_name, country, source):
@@ -151,14 +153,15 @@ def read_caida(filename, compression):
     orgs = {}
     method = None
     format_re = re.compile(r'# format:\s*(.*)')
-    with File2(filename, compression=compression) as f:
-        for line in f:
-            m = format_re.match(line)
-            if m:
-                fields = m.group(1).split('|')
-                method = partial(add_org, orgs) if fields[0] == 'org_id' else partial(add_asn, ases)
-            elif line[0] != '#' and method is not None:
-                method(line.split('|'))
+    if filename is not None:
+        with File2(filename, compression=compression) as f:
+            for line in f:
+                m = format_re.match(line)
+                if m:
+                    fields = m.group(1).split('|')
+                    method = partial(add_org, orgs) if fields[0] == 'org_id' else partial(add_asn, ases)
+                elif line[0] != '#' and method is not None:
+                    method(line.split('|'))
     return ases, orgs
 
 
