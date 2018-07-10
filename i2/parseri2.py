@@ -8,6 +8,7 @@ from lxml import etree
 from verify import GroundTruth
 
 mappings = {
+    'NLM via NIH': 393689,
     'BACKBONE': 0,
     'trcpsbb': 0,
     ' OOB': 0,
@@ -33,7 +34,7 @@ mappings = {
     'PSU': 3999,
     'Sun Corridor': 2900,
     'Code42': 62715,
-    'Vidyo': 22308,
+    'Vidyo': 393462,
     'UMontana': 3807,
     'University of Wisconsin System': 3128,
     'USDA': 4152,

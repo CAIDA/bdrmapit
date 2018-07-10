@@ -19,7 +19,7 @@ SINGLE = 4
 SINGLE_MODIFIED = 5
 HEAPED = 6
 HEAPED_MODIFIED = 7
-MISSING_NOINTER = 8
+MISSING_NOINTER = 10
 MISSING_INTER = 9
 
 
@@ -36,51 +36,58 @@ def heaptest(bdrmapit: Bdrmapit, rdests: Set[int], interfaces: List[Interface]):
     return original_min
 
 
+def nodests(bdrmapit: Bdrmapit, router: Router, interfaces: List[Interface]):
+    if len(interfaces) == 1 or len({i.asn for i in interfaces}):
+        dest = interfaces[0].asn
+        utype = NODEST
+        return dest, utype
+    else:
+        print(router.name, Counter(i.asn for i in interfaces))
+        dest = -1
+        utype = NOTIMPLEMENTED
+        return dest, utype
+
+
 def annotate(bdrmapit: Bdrmapit, router: Router):
     utype = -1
     rdests = bdrmapit.graph.modified_router_dests[router]
     log.debug(rdests)
     interfaces = bdrmapit.graph.router_interfaces[router]
     if len(rdests) == 0 or all(dest <= 0 for dest in rdests):
-        if len(interfaces) == 1 or len({i.asn for i in interfaces}):
-            dest = interfaces[0].asn
-            utype = NODEST
-        else:
-            print(router.name, Counter(i.asn for i in interfaces))
-            dest = -1
-            utype = NOTIMPLEMENTED
+        return nodests(bdrmapit, router, interfaces)
+    rorgs = {bdrmapit.as2org[d] for d in rdests}
+    if len(rorgs) == 1:
+        dest = list(rdests)[0]
+        utype = SINGLE
     else:
-        rorgs = {bdrmapit.as2org[d] for d in rdests}
-        if len(rorgs) == 1:
-            dest = list(rdests)[0]
-            utype = SINGLE
+        ifaces = {interface.asn for interface in interfaces}
+        log.debug('Ifaces: {}'.format(ifaces))
+        same = [dest for dest in rdests if dest in ifaces]
+        rels = [dest for dest in rdests if any(bdrmapit.bgp.rel(i, dest) for i in ifaces)]
+        log.debug('Same: {}'.format(same))
+        log.debug('Rels: {}'.format(rels))
+        if len(same) == 1:
+            return same[0], 8
+        if rels:
+            asn = min(rels, key=lambda x: (bdrmapit.bgp.conesize[x], -x))
+            # asn = max(rels, key=lambda x: (len(bdrmapit.bgp.cone[x] & rdests), -bdrmapit.bgp.conesize[x], x))
+            return asn, 9
+        dest = heaptest(bdrmapit, rdests, interfaces)
+        if utype == MODIFIED:
+            utype = HEAPED_MODIFIED
         else:
-            ifaces = {interface.asn for interface in interfaces}
-            log.debug(ifaces)
-            same = [dest for dest in rdests if dest in ifaces]
-            rels = [dest for dest in rdests if any(bdrmapit.bgp.rel(i, dest) for i in ifaces)]
-            log.debug(same)
-            log.debug(rels)
-            if len(same) == 1:
-                return same[0], 8
-            if rels:
-                asn = max(rels, key=lambda x: (len(bdrmapit.bgp.cone[x] & rdests), -bdrmapit.bgp.conesize[x], x))
-                return asn, 9
-            dest = heaptest(bdrmapit, rdests, interfaces)
-            if utype == MODIFIED:
-                utype = HEAPED_MODIFIED
-            else:
-                utype = HEAPED
-        if not all(i.asn <= 0 for i in interfaces) and not any(bdrmapit.bgp.rel(i.asn, dest) for i in interfaces):
-            intersection = bdrmapit.bgp.providers[dest] & {a for i in interfaces for a in bdrmapit.bgp.customers[i.asn]}
-            if len(intersection) == 1:
-                dest = peek(intersection)
-                return dest, MISSING_INTER
-            log.debug(bdrmapit.bgp.providers[dest] & {a for i in interfaces for a in bdrmapit.bgp.peers[i.asn]})
-            c = Counter(i.asn for i in interfaces if i.asn > 0)
-            if c:
-                return max(c, key=lambda x: (c[x], -bdrmapit.bgp.conesize[x], -x)), MISSING_NOINTER
-            return dest, MISSING_NOINTER
+            utype = HEAPED
+    iasns = Counter(i.asn for i in interfaces if i.asn > 0)
+    if iasns and not dest in iasns and not any(bdrmapit.bgp.rel(iasn, dest) for iasn in iasns):
+        intersection = bdrmapit.bgp.providers[dest] & {a for i in interfaces for a in bdrmapit.bgp.customers[i.asn]}
+        if len(intersection) == 1:
+            dest = peek(intersection)
+            return dest, MISSING_INTER
+        log.debug(bdrmapit.bgp.providers[dest] & {a for i in interfaces for a in bdrmapit.bgp.peers[i.asn]})
+        c = Counter(i.asn for i in interfaces if i.asn > 0)
+        if c:
+            return max(c, key=lambda x: (c[x], -bdrmapit.bgp.conesize[x], -x)), MISSING_NOINTER
+        return dest, MISSING_NOINTER
     return dest, utype
 
 

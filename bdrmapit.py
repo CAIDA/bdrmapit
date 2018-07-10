@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from multiprocessing.pool import Pool
 
 import algorithm as alg
-from create_objs_sqlite import CreateObjs
+from create_objs import CreateObjs
 import last_hop as lh
 from as2org import AS2Org
 from bgp.bgp import BGP

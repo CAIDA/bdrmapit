@@ -75,9 +75,9 @@ class Parser:
             y = trace.hops[0]
             if not y.private:
                 self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
-            while i < numhops - 1:
+            while i < numhops - 2:
                 i += 1
-                x, y, z = y, trace.hops[i], (trace.hops[i + 1] if i < numhops - 1 else None)
+                x, y, z = y, trace.hops[i], (trace.hops[i + 1] if i < numhops else None)
                 distance = y.ttl - x.ttl
                 if y.qttl == 0:
                     if z and (y.addr == z.addr or y.reply_ttl - z.reply_ttl == (z.ttl - y.ttl) - 1):
