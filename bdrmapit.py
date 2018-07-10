@@ -129,11 +129,6 @@ def run(row: Experiment):
     co.destpairs()
     graph.set_routers_interfaces()
     bdrmapit = Bdrmapit(graph, as2org, bgp, step=0)
-    # echo_routers = [router for router in graph.routers_succ if alg.get_edges(bdrmapit, router)[1] == 2]
-    # noecho_routers = [r for r in graph.routers_succ if r in graph.rnexthop or r in graph.rmulti]
-    # all_lasthop_routers = graph.routers_nosucc + echo_routers
-    # lh.annotate_lasthops(bdrmapit, routers=all_lasthop_routers)
-    # rupdates, iupdates = alg.graph_refinement(bdrmapit, noecho_routers, graph.interfaces_pred, iterations=row.iterations)
     lh.annotate_lasthops(bdrmapit, routers=graph.routers_nosucc)
     rupdates, iupdates = alg.graph_refinement(bdrmapit, graph.routers_succ, graph.interfaces_pred, iterations=row.iterations)
     con = opendb(row.output, remove=True)
