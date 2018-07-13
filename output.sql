@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS node (
 );
 
 CREATE TABLE IF NOT EXISTS aslinks (
-  addr      TEXT,
   router    TEXT,
   asn       INT,
   conn_asns TEXT

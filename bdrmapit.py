@@ -119,15 +119,13 @@ def save_aslinks(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, incremen
             continue
         conn_asns = {k: list(v) for k, v in conn_asns.items()}
         conn_asns_json = json.dumps(conn_asns)
-        for interface in bdrmapit.graph.router_interfaces[router]:
-            addr = interface.address
-            values.append((addr, router.name, rasn, conn_asns_json))
-            if len(values) == chunksize:
-                cur = con.cursor()
-                cur.executemany(query, values)
-                cur.close()
-                con.commit()
-                values = []
+        values.append((router.name, rasn, conn_asns_json))
+        if len(values) == chunksize:
+            cur = con.cursor()
+            cur.executemany(query, values)
+            cur.close()
+            con.commit()
+            values = []
     if values:
         cur = con.cursor()
         cur.executemany(query, values)
