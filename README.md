@@ -26,4 +26,4 @@ The first step is to generate the IP-to-AS mappings by combining BGP announcemen
 In order to generate the graph used by <tt>bdrmapIT</tt>, the the [parser](parser.md) script processes the orginal traceroute files. Description of arguments, options, and output is described there.
 
 ## Running bdrmapIT
-The last step is to actually run the [bdrmapit.py](bdrmapit.md) script, which runs the bdrmapIT algorithm. This produces a single (possibly large) CSV output file, described in its readme.
+The last step is to actually run the [bdrmapit.py](bdrmapit.md) script, which runs the bdrmapIT algorithm. This produces a single [<tt>sqlite</tt>](https://www.sqlite.org/index.html) database file described in its documentation.
