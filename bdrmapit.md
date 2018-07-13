@@ -1,4 +1,4 @@
-#<tt>bdrmapIT</tt>
+# <tt>bdrmapIT</tt>
 This is the code used to generate the output in the paper. For a detailed explanation please see the paper.
 
 ## Running <tt>bdrmapIT</tt>
