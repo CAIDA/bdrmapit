@@ -23,26 +23,7 @@ $ pip install -r requirements.txt  # Install required packages
 The first step is to generate the IP-to-AS mappings by combining BGP announcements, RIR extended delegation files, and IXP prefixes. The simplest way, and the way I've been doing it, is to use the [ip2as](ip2as.md) file. The usage instructions are in that file.
 
 ## Process Traceroute Files
-In order to generate the graph used by <tt>bdrmapIT</tt>, the the [parser](parser.md) script processes the orginal traceroute files. This creates a single <tt>sqlite</tt> database file with four tables:
-
-## address
-|Column|Type|Description|
-|---|---|---|
-|<tt>addr</tt>|TEXT|Interface IP address exposed by traceroute|
-|<tt>num</tt>|INT|The numerical representation of <tt>addr</tt>|
-
-Every address exposed by one of the traceroutes is recorded in this table. The numerical representation is currently unused but might be used in a later version to determine address adjacencies.
-
-## adjacency
-|Column|Type|Description|
-|---|---|---|
-|<tt>hop1</tt>|TEXT|The first hop in the pair|
-|<tt>hop2</tt>|TEXT|The second hop in the pair|
-|<tt>distance</tt>|INT|The distance between the hops. Distance is either 1 to indicate immediately adjacent, or 2 to indicate that there is one or more hop-gaps between them.|
-|<tt>type</tt>|INT|The ICMP Type of <tt>hop2</tt>|
-|<tt>direction</tt>|INT|Currently always the same, but might be used in a later version|
-
-This table records all hop pairs. Hop pairs are any two hops with no hops, private address hops, or unresponsive hops between them. We ignore any hop pairs following the first occurance of a cycled address (a repeated address separated where the two instances of the address are separated by at least one other address).
+In order to generate the graph used by <tt>bdrmapIT</tt>, the the [parser](parser.md) script processes the orginal traceroute files. Description of arguments, options, and output is described there.
 
 ## Running bdrmapIT
 The last step is to actually run the [bdrmapit.py](bdrmapit.md) script, which runs the bdrmapIT algorithm. This produces a single (possibly large) CSV output file, described in its readme.

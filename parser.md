@@ -26,3 +26,44 @@ I imagine this will be quite slow if the aggregated results do not fit in memory
 * The intermediate results are written to, and read from, the hard drive.
 I've been using quick SSDs, and I'm not sure how well it will perform with HDDs.
 * If a single file is being processed, it will be processed and written by the main process without spawning any child processes.
+
+## Output
+The output is a single [<tt>sqlite</tt>](https://www.sqlite.org/index.html) database file with four tables:
+
+### address
+|Column|Type|Description|
+|---|---|---|
+|<tt>addr</tt>|TEXT|Interface IP address exposed by traceroute|
+|<tt>num</tt>|INT|The numerical representation of <tt>addr</tt>|
+
+Every address exposed by one of the traceroutes is recorded in this table. The numerical representation is currently unused but might be used in a later version to determine address adjacencies.
+
+### adjacency
+|Column|Type|Description|
+|---|---|---|
+|<tt>hop1</tt>|TEXT|The first hop in the pair|
+|<tt>hop2</tt>|TEXT|The second hop in the pair|
+|<tt>distance</tt>|INT|The distance between the hops. Distance is either 1 to indicate immediately adjacent, or 2 to indicate that there is one or more hop-gaps between them.|
+|<tt>type</tt>|INT|The ICMP Type of <tt>hop2</tt>|
+|<tt>direction</tt>|INT|Currently always the same, but might be used or removed in a later version|
+
+This table records all hop pairs. Hop pairs are any two hops with no hops, private address hops, or unresponsive hops between them. We ignore any hop pairs following the first occurance of a cycled address (a repeated address separated where the two instances of the address are separated by at least one other address).
+
+### destpair
+|Column|Type|Description|
+|---|---|---|
+|<tt>addr</tt>|TEXT|Interface IP address exposed by traceroute|
+|<tt>asn</tt>|INT|IP-to-AS mapping for traceroute destination IP address|
+|<tt>echo</tt>|BOOLEAN|True if the ICMP Type of <tt>addr</tt>'s response was ECHO|
+|<tt>exclude</tt>|BOOLEAN|Currently unused, but might be used or removed in a later version|
+
+For each traceroute, we store every IP address seen along with the destination AS of the traceroute. The destination AS is simply the IP-to-AS mapping of the traceroute destination.
+
+### distance
+|Column|Type|Description|
+|---|---|---|
+|<tt>hop1</tt>|TEXT|The first hop in the pair|
+|<tt>hop2</tt>|TEXT|The second hop in the pair|
+|<tt>distance</tt>|INT|Greater than 0 indicates the hops are typically adjacent. Less than 0 indicates they are typically separated by at least 1 other hop.|
+
+This table is used to track two potentially adjacent hops across all of the traceroutes. This prevents hops that are typically multiple hops away from being inferred as immediately aadjacent hops.

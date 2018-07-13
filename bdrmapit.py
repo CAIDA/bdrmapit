@@ -74,6 +74,27 @@ def save_annotations(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, iupd
         con.commit()
 
 
+def save_routers(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, increment=100000, chunksize=10000):
+    query = 'INSERT INTO node (nid, asn, org, utype) VALUES (?, ?, ?, ?)'
+    values = []
+    pb = Progress(len(bdrmapit.graph.routers), 'Collecting node annotations', increment=increment)
+    for router in pb.iterator(bdrmapit.graph.routers):
+        rasn, rorg, rtype = bdrmapit.lhupdates.get(router, rupdates[router])
+        d = (router.name, rasn, rorg, rtype)
+        values.append(d)
+        if len(values) == chunksize:
+            cur = con.cursor()
+            cur.executemany(query, values)
+            cur.close()
+            con.commit()
+            values = []
+    if values:
+        cur = con.cursor()
+        cur.executemany(query, values)
+        cur.close()
+        con.commit()
+
+
 def save_aslinks(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, increment=100000, chunksize=10000):
     query = 'INSERT INTO aslinks (addr, router, asn, conn_asns) VALUES (?, ?, ?, ?)'
     values = []
