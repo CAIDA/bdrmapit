@@ -3,6 +3,8 @@ cdef class File2:
     cdef public str compression
     cdef public bint read
     cdef public f
+    cdef public bint override
+    cdef public bint _close
 
 cdef class DictDefault(dict):
     cdef public bint finalized
