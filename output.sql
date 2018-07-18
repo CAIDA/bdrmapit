@@ -12,8 +12,16 @@ CREATE TABLE IF NOT EXISTS annotation (
   rtype    INT
 );
 
+-- drop table node;
+
+CREATE TABLE IF NOT EXISTS node (
+  nid TEXT,
+  asn INT,
+  org TEXT,
+  utype INT
+);
+
 CREATE TABLE IF NOT EXISTS aslinks (
-  addr      TEXT,
   router    TEXT,
   asn       INT,
   conn_asns TEXT

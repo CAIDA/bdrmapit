@@ -1,9 +1,12 @@
-# Running <tt>bdrmapIT</tt>
+# <tt>bdrmapIT</tt>
+This is the code used to generate the output in the paper. For a detailed explanation please see the paper.
+
+## Running <tt>bdrmapIT</tt>
 The [bdrmapit.py](bdrmapit.py) runs the <tt>bdrmapIT</tt> algorithm. The arguments can either be specified on the command line or in a configuration file. If using a configuration file, more than one bdrmapit run can be specified. Additionally, they can optionally be run in parallel.
 
 Parallel execution is useful when the graph is relatively small (< a few million interfaces). However, it is expected that everything will slow considerably if the graphs do not fit in memory.
 
-## Configuration File
+### Configuration File
 The configuration file can be either a CSV or Excel spreadsheet. It must have the following columns, along with a header row as the first row. Extra columns are fine and will be ignored.
 
 |Column|Required|Description|
@@ -19,7 +22,7 @@ The configuration file can be either a CSV or Excel spreadsheet. It must have th
 |cone|Yes|Customer cone file in the format of the CAIDA [customer cone](http://data.caida.org/datasets/as-relationships/README.txt) files.|
 |output|Yes|Filename where the output sqlite database will be written. The file will be overwritten without warning if it exists.|
 
-## Options
+### Options
 The command line options are specified below. Options where the required field is marked <tt>C</tt> are only required when not using a configuration file.
 
 |Option|Required|Default|Description|
@@ -40,18 +43,21 @@ The command line options are specified below. Options where the required field i
 
 
 ## Output
-It produces an sqlite database with a single table named annotation. Its columns are:
+It produces an sqlite database with the following tables. In the descriptions, an inferred router (IR) is a group of one or more interface IP addresses. Alias resolution groups IP addresses together when they are inferred to belong to the same physical router. To distinguish physical routers from the groups of IP addresses, we refer to a group as an IR.
 
-|Field|Type|Description|
+### annotation
+|Column|Type|Description|
 |---|---|---|
 |addr|text|IP address of the interface.|
-|router|text|Router identifier. If there were no aliases specified for addr, this will be the same as the addr field.|
+|router|text|IR identifier from the nodes file. If there was not matching node for addr, this will be the same as the addr field.|
 |asn|int|The router's AS annotation, i.e. which AS operates the router.|
 |org|text|AS2Org mapping for asn.|
 |conn_asn|int|The interface's annotation, i.e., which network operates the router(s) connected to addr.|
 |conn_org|text|AS2Org mapping for conn_asn.|
 |iasn|int|The origin AS for addr.|
 |iorg|text|AS2Org mapping for iasn.|
+|utype|int|Used for testing and debugging. Will be removed without notice.|
+|itype|int|Used for testing and debugging. Will be removed without notice.|
 |rtype|int|Used for testing and debugging. Will be removed without notice.|
 
 An inter-AS link can be easily identified by querying for <tt>addrs</tt> with a different <tt>asn</tt> and <tt>conn_asn</tt>. As an example, the query:
@@ -60,7 +66,6 @@ SELECT * FROM annoation WHERE asn != conn_asn
 ```
 will return all interfaces used for interdomain links.
 
-### Annotations
 The two primary goals of <tt>bdrmapIT</tt> are annotating each node (group of interfaces on the same router) with an AS, and annotating each individual interface with an AS.
 The node annotation indicated the AS inferred to operate the node.
 If the annotation is AS3356, then <tt>bdrmapIT</tt> thinks that Level3 operates that router.
@@ -71,6 +76,26 @@ In this situation, <tt>bdrmapIT</tt> inferred that *i* is an interface on a rout
 
 When determining the interface annotation, we assume that if it differs from the node annotation it is used for a point-to-point link.
 Therefore, if its origin AS is not the same as the node annotation, we annotate the interface with its origin AS.
+
+### node
+|Column|Type|Description|
+|---|---|---|
+|nid|TEXT|The node ID for the IR from the nodes file. If no matching node, it is simply the IP address of the lone interface in the IR.|
+|asn|INT|The AS annotation for the IR. Indicates the AS inferred to operate the router.|
+|org|TEXT|AS-to-Org mapping for <tt>asn</tt>|
+|utype|INT|Used for testing and debugging. Will be removed without notice. Currently, 1 indicates that every time an IR address appeared in a traceroute, it was as an ECHO Reply. Less than 10 indicates the all IR addresses always appeared last in their respective traceroutes.|
+
+This is similar to the <tt>annotation</tt> table, except each IR is listed only once. This table is designed to give easy access to the IR annotations, without required grouping queries. The tradeoff is increased file size but decreased query speeds. Since disk space is cheap, but memory is not, we opted to use more disk storage space.
+
+### aslinks
+|Column|Type|Description|
+|---|---|---|
+|addr|TEXT|IP address exposed by the traceroutes|
+|router|TEXT|Node ID for the IR containing <tt>addr</tt>|
+|asn|INT|IP-to-AS mapping for the IR|
+|conn_asns|TEXT|JSON string containing a list of ASes connected to the router|
+
+The previous two tables do not provide enough information to determine the ASes connected to each IR. This table does that.
 
 ## Notes
 The nodes file format, as explained in the ITDK readme, is:

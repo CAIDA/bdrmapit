@@ -3,6 +3,7 @@ import gzip
 import json
 import logging
 import pickle
+import sys
 from itertools import filterfalse
 from socket import inet_ntoa, inet_aton
 from struct import pack, unpack
@@ -14,12 +15,28 @@ log = logging.getLogger()
 
 
 cdef class File2:
-    def __init__(self, str filename, str compression='infer', bint read=True):
+    def __init__(self, str filename, str compression='infer', bint read=True, bint override=False):
         self.filename = filename
         self.compression = infer_compression(filename) if compression == 'infer' else compression
         self.read = read
+        self.f = None
+        self.override = override
+        self._close = True
 
     def __enter__(self):
+        return self.open()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def open(self):
+        if self.filename == '-':
+            if self.read:
+                self.f = sys.stdin
+            else:
+                self.f = sys.stdout
+            self._close = False
         if self.compression == 'gzip':
             self.f = gzip.open(self.filename, 'rt' if self.read else 'wt')
         elif self.compression == 'bzip2':
@@ -28,9 +45,9 @@ cdef class File2:
             self.f = open(self.filename, 'r' if self.read else 'w', encoding='utf8')
         return self.f
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.f.close()
-        return False
+    def close(self):
+        if self._close:
+            self.f.close()
 
 
 cdef class DictDefault(dict):

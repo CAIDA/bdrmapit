@@ -81,6 +81,7 @@ mappings = {
     'CAAREN': 4901,
     'FranceTelecom': 5511,
     'redCLARA': 27750,
+    'MOREnet': 2572,
     'GPN': 11317,
     'MREN': -3,
     'CIC Racklan': -3,
@@ -136,6 +137,8 @@ def parse(filename, ip2as):
                         casn = 0
                         for label, masn in mappings.items():
                             if label in desc:
+                                if 'MOREnet' in desc:
+                                    print(label, desc, masn)
                                 if masn == 0:
                                     casn = asn
                                 else:

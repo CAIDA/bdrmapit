@@ -74,6 +74,27 @@ def save_annotations(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, iupd
         con.commit()
 
 
+def save_routers(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, increment=100000, chunksize=10000):
+    query = 'INSERT INTO node (nid, asn, org, utype) VALUES (?, ?, ?, ?)'
+    values = []
+    pb = Progress(len(bdrmapit.graph.routers), 'Collecting node annotations', increment=increment)
+    for router in pb.iterator(bdrmapit.graph.routers):
+        rasn, rorg, rtype = bdrmapit.lhupdates.get(router, rupdates[router])
+        d = (router.name, rasn, rorg, rtype)
+        values.append(d)
+        if len(values) == chunksize:
+            cur = con.cursor()
+            cur.executemany(query, values)
+            cur.close()
+            con.commit()
+            values = []
+    if values:
+        cur = con.cursor()
+        cur.executemany(query, values)
+        cur.close()
+        con.commit()
+
+
 def save_aslinks(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, increment=100000, chunksize=10000):
     query = 'INSERT INTO aslinks (addr, router, asn, conn_asns) VALUES (?, ?, ?, ?)'
     values = []
@@ -98,15 +119,13 @@ def save_aslinks(con: sqlite3.Connection, bdrmapit: Bdrmapit, rupdates, incremen
             continue
         conn_asns = {k: list(v) for k, v in conn_asns.items()}
         conn_asns_json = json.dumps(conn_asns)
-        for interface in bdrmapit.graph.router_interfaces[router]:
-            addr = interface.address
-            values.append((addr, router.name, rasn, conn_asns_json))
-            if len(values) == chunksize:
-                cur = con.cursor()
-                cur.executemany(query, values)
-                cur.close()
-                con.commit()
-                values = []
+        values.append((router.name, rasn, conn_asns_json))
+        if len(values) == chunksize:
+            cur = con.cursor()
+            cur.executemany(query, values)
+            cur.close()
+            con.commit()
+            values = []
     if values:
         cur = con.cursor()
         cur.executemany(query, values)
@@ -129,11 +148,6 @@ def run(row: Experiment):
     co.destpairs()
     graph.set_routers_interfaces()
     bdrmapit = Bdrmapit(graph, as2org, bgp, step=0)
-    # echo_routers = [router for router in graph.routers_succ if alg.get_edges(bdrmapit, router)[1] == 2]
-    # noecho_routers = [r for r in graph.routers_succ if r in graph.rnexthop or r in graph.rmulti]
-    # all_lasthop_routers = graph.routers_nosucc + echo_routers
-    # lh.annotate_lasthops(bdrmapit, routers=all_lasthop_routers)
-    # rupdates, iupdates = alg.graph_refinement(bdrmapit, noecho_routers, graph.interfaces_pred, iterations=row.iterations)
     lh.annotate_lasthops(bdrmapit, routers=graph.routers_nosucc)
     rupdates, iupdates = alg.graph_refinement(bdrmapit, graph.routers_succ, graph.interfaces_pred, iterations=row.iterations)
     con = opendb(row.output, remove=True)
