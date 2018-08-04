@@ -75,11 +75,11 @@ def PrintTables(args):
         print ("   ",col_name_list)
 
 def Convert_Sql(fname):
-    sys.stderr.write("loading "+fname+"\n")
+    sys.stderr.write("converting sql "+fname+"\n")
     con = sqlite3.connect(fname)
     cur = con.cursor()
 
-    cur.execute("SELECT DISTINCT router, asn FROM annotation");
+    cur.execute('SELECT DISTINCT nid, asn FROM node WHERE nid LIKE "N%"');
     for nid_asn in cur.fetchall():
         print ("node.AS",nid_asn[0], nid_asn[1])
 
