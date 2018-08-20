@@ -275,7 +275,14 @@ def annotate_interface(bdrmapit: Bdrmapit, interface, rupdates: Updates):
     if len(votes) == 1:
         return peek(votes), 1 if len(edges) > 1 else 0
     asns = max_num(votes, key=votes.__getitem__)
-    asn = max(asns, key=lambda x: (x == interface.asn, bdrmapit.bgp.conesize[x], -x))
+    log.debug('MaxNum: {}'.format(asns))
+    rels = [asn for asn in asns if interface.asn == asn or bdrmapit.bgp.rel(interface.asn, asn)]
+    if not rels:
+        rels = asns
+    log.debug('Rels: {}'.format(rels))
+    log.debug('Sorted Rels: {}'.format(sorted(rels, key=lambda x: (x != interface.asn, -bdrmapit.bgp.provider_rel(interface.asn, x), -bdrmapit.bgp.conesize[x], x))))
+    # asn = max(asns, key=lambda x: (x == interface.asn, bdrmapit.bgp.conesize[x], -x))
+    asn = min(rels, key=lambda x: (x != interface.asn, -bdrmapit.bgp.provider_rel(interface.asn, x), -bdrmapit.bgp.conesize[x], x))
     utype = 1 if len(asns) == 1 and len(edges) > 1 else 2
     return asn, utype
 
