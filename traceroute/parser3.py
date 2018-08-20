@@ -33,8 +33,8 @@ def opendb(filename, remove=False):
     con = sqlite3.connect(filename)
     cur = con.cursor()
     cur.execute('CREATE TABLE IF NOT EXISTS address (addr TEXT, num INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, distance INT, type INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT, echo BOOLEAN)')
+    cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, distance INT, type INT, direction INT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT, echo BOOLEAN, exclude INT)')
     cur.execute('CREATE TABLE IF NOT EXISTS distance (hop1 TEXT, hop2 TEXT, distance INT)')
     cur.execute('CREATE TABLE IF NOT EXISTS seen (hop1 TEXT, hop2 TEXT, num INT)')
     cur.close()
@@ -73,7 +73,7 @@ class Parser:
         i = 0
         y = trace.hops[0]
         if not y.private:
-            self.dps.add((y.addr, dest_asn, y.icmp_type == 0))
+            self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
         while i < numhops - 1:
             i += 1
             x, y, z = y, trace.hops[i], (trace.hops[i + 1] if i < numhops - 1 else None)
@@ -88,13 +88,66 @@ class Parser:
                 distance = 2
             elif distance < 1:
                 distance = -1
-            self.adjs.add((x.addr, y.addr, distance, y.icmp_type))
-            self.dps.add((y.addr, dest_asn, y.icmp_type == 0))
+            # if y.ttl == z.ttl - 1:
+            #     yzdiff = y.num - z.num
+            #     if yzdiff == 1 or yzdiff == -1:
+            #         self.adjs.add((x.addr, z.addr, distance, z.icmp_type, BOTH))
+            #         self.adjs.add((y.addr, x.addr, distance, x.icmp_type, FORWARD))
+            #         self.adjs.add((y.addr, z.addr, distance, z.icmp_type, BACKWARD))
+            #         self.dps.add((y.addr, dest_asn, y.icmp_type == 0, ADJEXCLUDE))
+            #         self.dps.add((z.addr, dest_asn, z.icmp_type == 0, NONE))
+            #         self.dists[(x.addr, z.addr)] += 1 if distance == 1 else -1
+            #         self.dists[(y.addr, x.addr)] += 1 if distance == 1 else -1
+            #         self.dists[(y.addr, z.addr)] += 1 if distance == 1 else -1
+            #         y = z
+            #         i += 1
+            #         continue
+            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BOTH))
+            self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
             self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
 
     def parse(self):
         for trace in self:
-            self.parseone(trace)
+            self.addrs.update((h.addr, h.num) for h in trace.allhops if not h.private)
+            dest_asn = trace.dst_asn
+            numhops = len(trace.hops)
+            if numhops == 0:
+                continue
+            i = 0
+            y = trace.hops[0]
+            if not y.private:
+                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
+            while i < numhops - 1:
+                i += 1
+                x, y, z = y, trace.hops[i], (trace.hops[i + 1] if i < numhops - 1 else None)
+                distance = y.ttl - x.ttl
+                if y.qttl == 0:
+                    if z and (y.addr == z.addr or y.reply_ttl - z.reply_ttl == (z.ttl - y.ttl) - 1):
+                        distance -= y.qttl - x.qttl
+                elif y.qttl > 1:
+                    if y.icmp_type == 3 and y.qttl - x.qttl >= y.ttl - x.ttl:
+                        distance -= y.qttl - x.qttl
+                if distance > 1:
+                    distance = 2
+                elif distance < 1:
+                    distance = -1
+                # if y.ttl == z.ttl - 1:
+                #     yzdiff = y.num - z.num
+                #     if yzdiff == 1 or yzdiff == -1:
+                #         self.adjs.add((x.addr, z.addr, distance, z.icmp_type, BOTH))
+                #         self.adjs.add((y.addr, x.addr, distance, x.icmp_type, FORWARD))
+                #         self.adjs.add((y.addr, z.addr, distance, z.icmp_type, BACKWARD))
+                #         self.dps.add((y.addr, dest_asn, y.icmp_type == 0, ADJEXCLUDE))
+                #         self.dps.add((z.addr, dest_asn, z.icmp_type == 0, NONE))
+                #         self.dists[(x.addr, z.addr)] += 1 if distance == 1 else -1
+                #         self.dists[(y.addr, x.addr)] += 1 if distance == 1 else -1
+                #         self.dists[(y.addr, z.addr)] += 1 if distance == 1 else -1
+                #         y = z
+                #         i += 1
+                #         continue
+                self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BOTH))
+                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
+                self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
 
     def reset(self):
         self.addrs = set()
@@ -120,14 +173,14 @@ def insert_address(con: sqlite3.Connection, addrs: Set):
 
 def insert_adjacency(con: sqlite3.Connection, adjs: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO adjacency (hop1, hop2, distance, type) VALUES (?, ?, ?, ?)', adjs)
+    cur.executemany('INSERT INTO adjacency (hop1, hop2, distance, type, direction) VALUES (?, ?, ?, ?, ?)', adjs)
     cur.close()
     con.commit()
 
 
 def insert_destpair(con: sqlite3.Connection, dps: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO destpair (addr, asn, echo) VALUES (?, ?, ?)', dps)
+    cur.executemany('INSERT INTO destpair (addr, asn, echo, exclude) VALUES (?, ?, ?, ?)', dps)
     cur.close()
     con.commit()
 
