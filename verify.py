@@ -1,5 +1,6 @@
 from typing import List, Dict, Set
 
+import numpy as np
 import pandas as pd
 
 from graph.bdrmapit import Bdrmapit
@@ -98,7 +99,8 @@ def comparison(g: pd.DataFrame):
     ifp = lv.get('FP', 0)
     itn = lv.get('TN', 0)
     ifn = lv.get('FN', 0)
-    ppv = itp / (itp + ifp)
+    ppv, recall = calcppv(ig)
+    # ppv = itp / (itp + ifp)
     recall = itp / (itp + ifn)
     iaccuracy = (itp + itn) / (itp + itn + ifp + ifn)
     small = ig[ig.cone <= 0]
@@ -116,8 +118,13 @@ def calcppv(ig: pd.DataFrame):
         ifp = lv.get('FP', 0)
         itn = lv.get('TN', 0)
         ifn = lv.get('FN', 0)
-        ppv = itp / (itp + ifp)
-        recall = itp / (itp + ifn)
+        if itp > 0 or ifp > 0:
+            ppv = itp / (itp + ifp)
+        else:
+            ppv = np.nan
+        if itp > 0 or ifn > 0:
+            recall = itp / (itp + ifn)
+        else:
+            recall = np.nan
         return ppv, recall
-    else:
-        return 0, 0
+    return np.nan, np.nan

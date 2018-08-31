@@ -20,7 +20,11 @@ class CreateObjs:
     def read_addresses(self, address: Iterable[Tuple[str, int]] = None, increment=1000000):
         i = 0
         if address is None:
-            address = self.con.execute('SELECT addr, num FROM address')
+            try:
+                address = self.con.execute('SELECT addr, num FROM address')
+            except sqlite3.OperationalError:
+                print('No num column. Ignoring nums.')
+                address = self.con.execute('SELECT addr, 0 FROM address')
         pb = Progress(message='Addresses', increment=increment, callback=lambda: '{:,d}'.format(i))
         for addr, num in pb.iterator(address):
             asn = self.ip2as[addr]
@@ -58,13 +62,7 @@ class CreateObjs:
             if (h1, h2) not in adjs:
                 dist = 10
             used += self.g.add_edge(h1, h2, dist, icmp_type)
-        self.g.rnexthop.finalize()
-        self.g.recho.finalize()
-        self.g.rmulti.finalize()
-        self.g.rnh_ases.finalize()
-        self.g.re_ases.finalize()
-        self.g.rm_ases.finalize()
-        self.g.inexthop.finalize()
+        self.g.finalize_edges()
 
     def destpairs(self, dps=None, increment=500000):
         used = 0
@@ -75,5 +73,5 @@ class CreateObjs:
         for addr, dest_asn in pb.iterator(dps):
             self.g.add_dest(addr, dest_asn)
             used += 1
-        self.g.interface_dests.finalize()
+        self.g.finalize_dests()
         self.g.set_dests(self.as2org, self.bgp)

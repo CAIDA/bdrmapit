@@ -144,12 +144,14 @@ def reallocated(bdrmapit: Bdrmapit, router: Router, edges: Set[Interface], rtype
 
 def hidden_asn(bdrmapit: Bdrmapit, iasns, asn, utype):
     intersection = {a for o in iasns for a in bdrmapit.bgp.customers[o]} & bdrmapit.bgp.providers[asn]
+    print(intersection, iasns, asn)
     if len(intersection) == 1:
         asn = peek(intersection)
         log.debug('Hidden: {}'.format(asn))
         return asn, HIDDEN_INTER + utype
     elif not intersection:
         intersection = {a for o in iasns for a in bdrmapit.bgp.providers[o]} & bdrmapit.bgp.customers[asn]
+        print(intersection, iasns, asn)
         if len(intersection) == 1:
             asn = peek(intersection)
             log.debug('Hidden Reversed: {}'.format(asn))
@@ -167,26 +169,21 @@ def conetest(bdrmapit: Bdrmapit, asn):
 def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupdates: Updates):
     utype = 0
     edges, rtype = get_edges(bdrmapit, router)
-    if log.isdebug():
-        log.debug('Edges={}, Rtype={}'.format(len(edges), rtype))
+    log.debug('Edges={}, Rtype={}'.format(len(edges), rtype))
     succs = Counter()
     succ_origins = defaultdict(set)
     for isucc in edges:
         origins = {o for o in get_origins(bdrmapit, router, isucc, rtype) if o > 0}
-        if log.isdebug():
-            log.debug('Succ={}, ASN={}, Origins={}'.format(isucc.address, isucc.asn, origins))
+        log.debug('Succ={}, ASN={}, Origins={}'.format(isucc.address, isucc.asn, origins))
         succ_asn = router_heuristics(bdrmapit, router, isucc, origins, rtype, rupdates, iupdates)
-        if log.isdebug():
-            log.debug('Heuristic: {}'.format(succ_asn))
+        log.debug('Heuristic: {}'.format(succ_asn))
         if succ_asn > 0:
             succs[succ_asn] += 1
             succ_origins[succ_asn].update(origins)
-    if log.isdebug():
-        log.debug('Succs: {}'.format(succs))
+    log.debug('Succs: {}'.format(succs))
     iasns = Counter(i.asn for i in bdrmapit.graph.router_interfaces[router] if i.asn > 0)
     utype += reallocated(bdrmapit, router, edges, rtype, rupdates, succs, succ_origins, iasns)
-    if log.isdebug():
-        log.debug('IASNS: {}'.format(iasns))
+    log.debug('IASNS: {}'.format(iasns))
     if len(succs) == 1 or len({bdrmapit.as2org[sasn] for sasn in succs}) == 1:
         sasn = peek(succs) if len(succs) == 1 else max(succs, key=lambda x: (bdrmapit.bgp.conesize[x], -x))
         if sasn in iasns:
@@ -194,8 +191,7 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
         if succs[sasn] > sum(iasns.values()) / 4:
             for iasn in succ_origins[sasn]:
                 if bdrmapit.bgp.customer_rel(sasn, iasn):
-                    if log.isdebug():
-                        log.debug('Provider: {}->{}'.format(iasn, sasn))
+                    log.debug('Provider: {}->{}'.format(iasn, sasn))
                     return sasn, utype + SINGLE_SUCC_4
             conesize = bdrmapit.bgp.conesize[sasn]
             if not any(bdrmapit.bgp.rel(iasn, sasn) for iasn in succ_origins[sasn]) and any(
@@ -210,13 +206,11 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
             for isucc in edges:
                 rasn = get(bdrmapit, bdrmapit.graph.interface_router[isucc], rupdates)[0]
                 rasns.add(rasn if rasn > 0 else sasn)
-            if log.isdebug():
-                log.debug('RASNS={}, SASN={}'.format(rasns, sasn))
+            log.debug('RASNS={}, SASN={}'.format(rasns, sasn))
             if sasn not in rasns:
                 return sasn, utype + SINGLE_SUCC_RASN
     votes = succs + iasns
-    if log.isdebug():
-        log.debug('Votes: {}'.format(votes))
+    log.debug('Votes: {}'.format(votes))
     if len(succs) > 1:
         if not any(iasn in succs for iasn in iasns):
             for iasn in iasns:
@@ -224,14 +218,12 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
                     if votes[iasn] > max(votes.values()) / 2:
                         return iasn, utype + ALLPEER_SUCC
         iasn_in_succs = [iasn for iasn in iasns if iasn in succs]
-        if log.isdebug():
-            log.debug('IASN in Succs: {}'.format(iasn_in_succs))
         if len(iasn_in_succs) == 1:
-            isasn = iasn_in_succs[0]
-            if all(bdrmapit.bgp.peer_rel(isasn, sasn) or bdrmapit.bgp.provider_rel(sasn, isasn) for sasn in succs if
-                   sasn != isasn):
-                if votes[isasn] > max(votes.values()) / 2:
-                    return isasn, IASN_SUCC_HALF
+            iasn = iasn_in_succs[0]
+            if all(bdrmapit.bgp.peer_rel(iasn, sasn) or bdrmapit.bgp.provider_rel(sasn, iasn) for sasn in succs if
+                   sasn != iasn):
+                if votes[iasn] > max(votes.values()) / 2:
+                    return iasn, IASN_SUCC_HALF
     if len(succs) == 1 and len(iasns) > 1 and not any(iasn in succs for iasn in iasns):
         for sasn in succs:
             if all(bdrmapit.bgp.peer_rel(iasn, sasn) for iasn in iasns):
@@ -239,30 +231,19 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
     if not votes:
         return -1, -1
     allorigins = {o for os in succ_origins.values() for o in os}
-    if len(succs) == 1:
-        if log.isdebug():
-            log.debug('AllOrigins={}, Succs={}'.format(allorigins, succs))
-        asn = peek(succs)
-        if all(bdrmapit.bgp.customer_rel(asn, iasn) for iasn in allorigins):
-            return asn, utype + REMAINING_4
     remaining = succs.keys() - allorigins
-    if log.isdebug():
-        log.debug('AllOrigins={}, Remaining={}'.format(allorigins, remaining))
+    log.debug('AllOrigins={}, Remaining={}'.format(allorigins, remaining))
     if len(remaining) == 1:
         asn = peek(remaining)
         if any(bdrmapit.bgp.customer_rel(asn, iasn) for iasn in allorigins):
             num = votes[asn]
-            if log.isdebug():
-                log.debug('Votes test: num={} > sum(votes)={}'.format(num, sum(votes.values())))
+            log.debug('Votes test: num={} > sum(votes)={}'.format(num, sum(votes.values())))
             if bdrmapit.bgp.conesize[asn] <= 0 and num >= (max(votes.values())) / 2:
                 return asn, utype + REMAINING_4
     votes_rels = [vasn for vasn in votes if vasn in iasns or any(bdrmapit.bgp.rel(iasn, vasn) for iasn in iasns)]
-    if log.isdebug():
-        log.debug('Vote Rels: {}'.format(votes_rels))
-    check_hidden = False
+    log.debug('Vote Rels: {}'.format(votes_rels))
     if len(votes_rels) < 2:
         votes_rels = votes
-        check_hidden = True
     else:
         for vasn in list(votes):
             if vasn not in votes_rels:
@@ -274,14 +255,6 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
     if rtype != 3 and votes[othermax] > votes[asns[0]] * 4:
         utype += 3000
         return othermax, utype
-    if check_hidden:
-        intersection = {a for o in iasns for a in bdrmapit.bgp.customers[o]} & {a for o in asns if o not in iasns for a in bdrmapit.bgp.providers[o]}
-        if not intersection:
-            intersection = {a for o in iasns for a in bdrmapit.bgp.providers[o]} & {a for o in asns if o not in iasns for a in bdrmapit.bgp.customers[o]}
-        if len(intersection) == 1:
-            asn = peek(intersection)
-            asns = [asn]
-            utype += 10000
     if len(asns) == 1:
         asn = asns[0]
         utype += VOTE_SINGLE
@@ -317,42 +290,36 @@ def annotate_interfaces(bdrmapit: Bdrmapit, rupdates: Updates, iupdates: Updates
 
 
 def annotate_interface(bdrmapit: Bdrmapit, interface, rupdates: Updates):
-    edges = set(bdrmapit.graph.inexthop[interface])
+    edges = set(bdrmapit.graph.inexthop.get(interface))
     votes = Counter()
     for ipred in edges:
         rpred = bdrmapit.graph.interface_router[ipred]
         asn, _, _ = rupdates[rpred]
-        if log.isdebug():
-            log.debug('Addr={}, Router={}, ASN={}, RASN={}'.format(ipred.address, rpred.name, ipred.asn, asn))
+        log.debug('Addr={}, Router={}, ASN={}, RASN={}'.format(ipred.address, rpred.name, ipred.asn, asn))
         prefix, _, num = interface.address.rpartition('.')
         iprefix, _, inum = ipred.address.rpartition('.')
         same = False
         if prefix == iprefix:
             if -1 <= int(num) - int(inum) <= 1:
-                if log.isdebug():
-                    log.debug('Prefix={}, Diff={}, Same={}'.format(prefix, int(num) - int(inum), same))
+                log.debug('Prefix={}, Diff={}, Same={}'.format(prefix, int(num) - int(inum), same))
                 same = True
         if not same and interface.org == ipred.org:
             asn = ipred.asn
         else:
-            if log.isdebug():
-                log.debug('Router={}, RASN={}'.format(rpred.name, asn))
+            log.debug('Router={}, RASN={}'.format(rpred.name, asn))
             if asn == -1:
                 asn = ipred.asn
         votes[asn] += 1
-    if log.isdebug():
-        log.debug('Votes: {}'.format(votes))
+    log.debug('Votes: {}'.format(votes))
     if len(votes) == 1:
         return peek(votes), 1 if len(edges) > 1 else 0
     asns = max_num(votes, key=votes.__getitem__)
-    if log.isdebug():
-        log.debug('MaxNum: {}'.format(asns))
+    log.debug('MaxNum: {}'.format(asns))
     rels = [asn for asn in asns if interface.asn == asn or bdrmapit.bgp.rel(interface.asn, asn)]
     if not rels:
         rels = asns
-    if log.isdebug():
-        log.debug('Rels: {}'.format(rels))
-        log.debug('Sorted Rels: {}'.format(sorted(rels, key=lambda x: (
+    log.debug('Rels: {}'.format(rels))
+    log.debug('Sorted Rels: {}'.format(sorted(rels, key=lambda x: (
         x != interface.asn, -bdrmapit.bgp.provider_rel(interface.asn, x), -bdrmapit.bgp.conesize[x], x))))
     # asn = max(asns, key=lambda x: (x == interface.asn, bdrmapit.bgp.conesize[x], -x))
     asn = min(rels, key=lambda x: (
@@ -369,11 +336,11 @@ def get(bdrmapit, r: Router, updates: Updates):
 
 
 def get_edges(bdrmapit: Bdrmapit, router):
-    edges = bdrmapit.graph.rnexthop[router]
+    edges = bdrmapit.graph.rnexthop.get(router)
     if edges:
         rtype = 1
     else:
-        edges = bdrmapit.graph.recho[router]
+        edges = bdrmapit.graph.recho.get(router)
         if edges:
             rtype = 2
         else:
