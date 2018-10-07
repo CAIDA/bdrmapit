@@ -21,6 +21,9 @@ class AbstractTrace:
         self.remove_private()
         self.loop = False
 
+    def __getitem__(self, item):
+        return self.hops[item]
+
     @property
     def alladdrs(self):
         for hop in self.allhops:

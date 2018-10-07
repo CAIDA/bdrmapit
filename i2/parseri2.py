@@ -92,7 +92,7 @@ mappings = {
 }
 
 
-def parse(filename, ip2as):
+def parse(filename, ip2as, dataset='both'):
     parser = etree.XMLParser(ns_clean=True, recover=True)
     root = etree.parse(filename, parser)
     ds = root.findall('.//{*}logical-interface/{*}description')
@@ -100,60 +100,69 @@ def parse(filename, ip2as):
     seen = set()
     for d in ds:
         li = d.getparent()
-        afn = li.find('.//{*}address-family-name')
-        if afn.text == 'inet':
-            af = afn.getparent()
-            ifad = af.find('.//{*}ifa-destination')
-            ifal = af.find('.//{*}ifa-local')
-            if ifad is not None:
-                desc = d.text
-                net = ifad.text
-                if net in seen:
-                    continue
-                seen.add(net)
-                addr = ifal.text
-                asn = 11537
-                casn = ip2as[net]
-                if casn < -1:
-                    continue
-                if casn == 11164:
-                    asn = 11164
-                if casn == 396450:
-                    asn = 396450
-                # if asn != 11537:
-                #     continue
-                if 'trcps' in desc:
-                    continue
-                plen = int(net.rpartition('/')[-1]) if '/' in net else 32
-                if plen < 30 and casn != 11537 and casn != 11164 and casn != 396450:
-                    continue
-                m = re.search(r'\sAS:?\s?(\d+)', desc)
-                if m:
-                    casn = int(m.group(1))
-                elif casn == asn or casn == 0:
-                    if plen < 30 or plen == 32:
-                        casn = asn
-                    else:
-                        casn = 0
-                        for label, masn in mappings.items():
-                            if label in desc:
-                                if 'MOREnet' in desc:
-                                    print(label, desc, masn)
-                                if masn == 0:
-                                    casn = asn
-                                else:
-                                    casn = masn
-                                break
-                if casn > 0 and asn > 0:
-                    for host in netaddr.IPNetwork(net).iter_hosts():
-                        if str(host) != addr:
-                            if str(host) == '198.71.46.206':
-                                print(addr, asn, casn)
-                            rows.append(GroundTruth(str(host), casn, asn))
-                if (casn == -1 or casn > 0) and (asn == -1 or asn > 0):
-                    if addr == '198.71.46.206':
-                        print(addr, asn, casn)
-                    rows.append(GroundTruth(addr, asn, casn))
+        for afn in li.findall('.//{*}address-family-name'):
+            if afn.text == 'inet' or afn.text == 'inet6':
+                af = afn.getparent()
+                ifad = af.find('.//{*}ifa-destination')
+                ifal = af.find('.//{*}ifa-local')
+                if ifad is not None:
+                    desc = d.text
+                    net = ifad.text
+                    if net in seen:
+                        continue
+                    seen.add(net)
+                    addr = ifal.text
+                    asn = 11537
+                    casn = ip2as[net]
+                    if casn < -1:
+                        continue
+                    if casn == 11164:
+                        asn = 11164
+                    if casn == 396450:
+                        asn = 396450
+                    if addr == '2001:468:fc:4e::1':
+                        print(asn, casn)
+                    # if asn != 11537:
+                    #     continue
+                    if dataset == 'primary':
+                        if 'trcps' in desc.lower():
+                            continue
+                    if dataset == 'trcps':
+                        if 'trcps' not in desc.lower():
+                            continue
+                    if 'trcps' in desc.lower():
+                        asn = 11164
+                        # continue
+                    plen = int(net.rpartition('/')[-1]) if '/' in net else 32
+                    if plen < 30 and casn != 11537 and casn != 11164 and casn != 396450:
+                        continue
+                    m = re.search(r'\sAS:?\s?(\d+)', desc)
+                    if m:
+                        casn = int(m.group(1))
+                    elif casn == asn or casn == 0:
+                        if plen < 30 or plen == 32:
+                            casn = asn
+                        else:
+                            casn = 0
+                            for label, masn in mappings.items():
+                                if label in desc:
+                                    if masn == 0:
+                                        casn = asn
+                                    else:
+                                        casn = masn
+                                    break
+                    if casn > 0 and asn > 0:
+                        n = netaddr.IPNetwork(net)
+                        if n.size < 10000:
+                            for host in n.iter_hosts():
+                                if str(host) != addr:
+                                    if str(host) == '198.71.46.206':
+                                        print(addr, asn, casn)
+                                    rows.append(GroundTruth(str(host), casn, asn))
+                    if (casn == -1 or casn > 0) and (asn == -1 or asn > 0):
+                        if addr == '198.71.46.206':
+                            print(addr, asn, casn)
+                        rows.append(GroundTruth(addr, asn, casn))
     return rows
 
 

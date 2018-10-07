@@ -1,6 +1,6 @@
 import pickle
 from abc import ABC, abstractmethod
-from typing import List, Iterator, Dict, Set, Tuple, Any
+from typing import List, Iterator, Dict, Set, Tuple
 
 from as2org import AS2Org
 from bgp.bgp import BGP
@@ -47,33 +47,6 @@ class InterfaceRouter(dict):
         return key
 
 
-class PriorityDict:
-    def __init__(self):
-        self.priority: Dict[Any, float] = {}
-        self.data: DictSet[Any, Set[Any]] = DictSet()
-        self.data.finalize()
-
-    def __contains__(self, item):
-        return item in self.data
-
-    def __getitem__(self, item):
-        return self.data[item]
-
-    def __iter__(self):
-        yield from self.data
-
-    def add(self, k, v, priority):
-        current = self.priority.get(k, float('inf'))
-        if priority == current:
-            self.data[k].add(v)
-        elif priority < current:
-            self.priority[k] = priority
-            self.data[k] = {v}
-
-    def get(self, k, default=None):
-        return self.data.get(k, default=default)
-
-
 class AbstractGraph(ABC):
     @classmethod
     def from_graph(cls, o):
@@ -98,10 +71,18 @@ class AbstractGraph(ABC):
         self.router_dests: Dict[Router, Set[int]] = NotImplemented
         self.modified_interface_dests: Dict[Interface, Set[int]] = NotImplemented
         self.modified_router_dests: Dict[Router, Set[int]] = NotImplemented
-        self.redges: PriorityDict = NotImplemented
-        self.iedges: PriorityDict = NotImplemented
-        self.rases: PriorityDict = NotImplemented
-        self.rinterfaces: PriorityDict = NotImplemented
+        self.rnexthop: Dict[Router, Set[Interface]] = NotImplemented
+        self.recho: Dict[Router, Set[Interface]] = NotImplemented
+        self.rmulti: Dict[Router, Set[Interface]] = NotImplemented
+        self.inexthop: Dict[Interface, Set[Interface]] = NotImplemented
+        self.iecho: Dict[Interface, Set[Interface]] = NotImplemented
+        self.imulti: Dict[Interface, Set[Interface]] = NotImplemented
+        self.rnh_ases: Dict[Tuple[Router, Interface], Set[int]] = NotImplemented
+        self.re_ases: Dict[Tuple[Router, Interface]] = NotImplemented
+        self.rm_ases: Dict[Tuple[Router, Interface]] = NotImplemented
+        self.rnh_interfaces: Dict[Router, Set[Interface]] = NotImplemented
+        self.re_interfaces: Dict[Router, Set[Interface]] = NotImplemented
+        self.rm_interfaces: Dict[Router, Set[Interface]] = NotImplemented
         self.routers: List[Router] = NotImplemented
         self.routers_succ: List[Router] = NotImplemented
         self.routers_nosucc: List[Router] = NotImplemented
@@ -120,11 +101,7 @@ class AbstractGraph(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def add_edge(self, xaddr: str, yaddr: str, distance: int, icmp_type: int, special: int) -> int:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def clear_edges(self):
+    def add_edge(self, xaddr: str, yaddr: str, distance: int, icmp_type: int) -> int:
         raise NotImplementedError()
 
     def copy(self):
@@ -141,6 +118,29 @@ class AbstractGraph(ABC):
     @abstractmethod
     def finalize_routers(self):
         raise NotImplementedError()
+
+    def iedges(self, interface):
+        return self.inexthop[interface]
+
+    def redges(self, router, priority):
+        if priority == NEXTHOP:
+            return self.rnexthop.get(router)
+        elif priority == ECHO:
+            return self.recho.get(router)
+        elif priority == MULTI:
+            return self.rmulti.get(router)
+        else:
+            raise ValueError('Invalid priority: {}'.format(priority))
+
+    def origin_ases(self, router, interface, priority):
+        if priority == NEXTHOP:
+            return self.rnh_ases[router, interface]
+        elif priority == ECHO:
+            return self.re_ases[router, interface]
+        elif priority == MULTI:
+            return self.rm_ases[router, interface]
+        else:
+            raise ValueError('Invalid priority: {}'.format(priority))
 
     def routers_degree(self) -> Iterator[Router]:
         for router in self.name_router.values():

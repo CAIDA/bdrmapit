@@ -104,37 +104,34 @@ class Parser:
         dest_asn = trace.dst_asn
         if dest_asn > 0:
             self.dps.update((y.addr, dest_asn) for y in trace.hops if y.icmp_type != 0)
-        vrfs = set()
-        for i in range(numhops):
-            w = trace.hops[i - 1] if numhops > 0 else None
-            x = trace.hops[i]
-            y = trace.hops[i + 1] if i < numhops - 1 else None
-            z = trace.hops[i + 2] if i < numhops - 2 else None
-            if x.addr in marked:
-                if w and (w.addr, x.addr) in pairs:
-                    continue
-                if w and w.asn in aasns[x.addr]:
-                    continue
-                if z and z.asn in basns[x.addr]:
-                    continue
-                if (not w or (w.asn > 0 and w.asn not in basns[x.addr])) and (not z or (z.asn > 0 and z.asn in aasns[x.addr])):
-                    continue
-                vrfs.add(x.addr)
         for i in range(numhops - 1):
             x = trace.hops[i]
             y = trace.hops[i+1]
             z = trace.hops[i+2] if i < numhops - 2 else None
             distance = self.compute_dist(x, y, z)
-            if x.addr in vrfs:
-                if y.addr in vrfs:
-                    special = DOUBLE
+            if y.addr in marked:
+                if x.asn in basns[y.addr]:
+                    self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BFORWARD))
+                elif z:
+                    if (y.addr, z.addr) not in pairs:
+                        if z.asn in aasns[y.addr]:
+                            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BFORWARD))
+                    if i < numhops - 3:
+                        zz = trace.hops[i+3]
+                        if zz.asn in aasns[y.addr]:
+                            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BFORWARD))
+            elif x.addr in marked:
+                if (x.addr, y.addr) in pairs:
+                    self.adjs.add((x.addr, y.addr, 1, 11, BBACKWARD))
                 else:
-                    special = BBACKWARD
-            elif y.addr in vrfs:
-                special = BFORWARD
+                    if i > 0:
+                        w = trace.hops[i-1]
+                        if w.asn in basns[x.addr]:
+                            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BBACKWARD))
+                    if y.asn in aasns[x.addr]:
+                        self.adjs.add((x.addr, y.addr, distance, y.icmp_type, DOUBLE))
             else:
-                special = NONE
-            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, special))
+                self.adjs.add((x.addr, y.addr, distance, y.icmp_type, NONE))
             self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
 
     def parse(self):

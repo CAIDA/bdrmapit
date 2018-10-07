@@ -3,7 +3,7 @@ import os
 import socket
 import sqlite3
 from collections import Counter
-from typing import Set, Tuple, Dict, Iterable
+from typing import Set
 
 from traceroute.atlas_trace import AtlasTrace
 from traceroute.hop import Hop
@@ -20,19 +20,11 @@ BOTH = 3
 NONE = 0
 ADJEXCLUDE = 1
 
-BFORWARD = 1
-BBACKWARD = 2
-DOUBLE = 3
-
 ADDR = 'address'
 ADJ = 'adjacency'
 DP = 'destpair'
 DIST = 'distance'
-
-pairs: Set[Tuple[str, str]] = None
-basns: Dict[str, Set[int]] = None
-aasns: Dict[str, Set[int]] = None
-marked: Set[str] = None
+TRIPS = 'triplets'
 
 
 def opendb(filename, remove=False):
@@ -48,9 +40,10 @@ def opendb(filename, remove=False):
         raise
     cur = con.cursor()
     cur.execute('CREATE TABLE IF NOT EXISTS address (addr TEXT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, distance INT, type INT, special INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, hop3 TEXT, plusone BOOLEAN, distance INT, type INT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT, echo BOOLEAN)')
     cur.execute('CREATE TABLE IF NOT EXISTS distance (hop1 TEXT, hop2 TEXT, distance INT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS triplets (hop1 TEXT, hop2 TEXT, hop3 TEXT)')
     cur.close()
     con.commit()
     return con
@@ -66,21 +59,18 @@ class Parser:
         self.adjs = set()
         self.dps = set()
         self.dists = Counter()
+        self.trips = set()
 
     def __iter__(self):
-        if isinstance(self.filename, str):
-            if self.output_type == OutputType.warts:
-                with Warts(self.filename, json=True) as f:
-                    for j in f:
-                        if j['type'] == 'trace':
-                            yield WartsTrace(j, ip2as=self.ip2as)
-            elif self.output_type == OutputType.atlas:
-                with File2(self.filename) as f:
-                    for j in map(json.loads, f):
-                        yield AtlasTrace(j, ip2as=self.ip2as)
-        else:
-            for j in self.filename:
-                yield WartsTrace(j, ip2as=self.ip2as)
+        if self.output_type == OutputType.warts:
+            with Warts(self.filename, json=True) as f:
+                for j in f:
+                    if j['type'] == 'trace':
+                        yield WartsTrace(j, ip2as=self.ip2as)
+        elif self.output_type == OutputType.atlas:
+            with File2(self.filename) as f:
+                for j in map(json.loads, f):
+                    yield AtlasTrace(j, ip2as=self.ip2as)
 
     def compute_dist(self, x: Hop, y: Hop, z: Hop = None):
         distance = y.ttl - x.ttl
@@ -102,39 +92,19 @@ class Parser:
         if numhops == 0:
             return
         dest_asn = trace.dst_asn
-        if dest_asn > 0:
-            self.dps.update((y.addr, dest_asn) for y in trace.hops if y.icmp_type != 0)
-        vrfs = set()
-        for i in range(numhops):
-            w = trace.hops[i - 1] if numhops > 0 else None
-            x = trace.hops[i]
-            y = trace.hops[i + 1] if i < numhops - 1 else None
-            z = trace.hops[i + 2] if i < numhops - 2 else None
-            if x.addr in marked:
-                if w and (w.addr, x.addr) in pairs:
-                    continue
-                if w and w.asn in aasns[x.addr]:
-                    continue
-                if z and z.asn in basns[x.addr]:
-                    continue
-                if (not w or (w.asn > 0 and w.asn not in basns[x.addr])) and (not z or (z.asn > 0 and z.asn in aasns[x.addr])):
-                    continue
-                vrfs.add(x.addr)
+        self.dps.update((y.addr, dest_asn, y.icmp_type == 0) for y in trace.hops)
         for i in range(numhops - 1):
+            if i > 0:
+                w = trace.hops[i-1]
+                waddr = w.addr
+            else:
+                w = waddr = None
             x = trace.hops[i]
             y = trace.hops[i+1]
             z = trace.hops[i+2] if i < numhops - 2 else None
+            plusone = addrdist(x.addr, y.addr) == 1
             distance = self.compute_dist(x, y, z)
-            if x.addr in vrfs:
-                if y.addr in vrfs:
-                    special = DOUBLE
-                else:
-                    special = BBACKWARD
-            elif y.addr in vrfs:
-                special = BFORWARD
-            else:
-                special = NONE
-            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, special))
+            self.adjs.add((waddr, x.addr, y.addr, plusone, distance, y.icmp_type))
             self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
 
     def parse(self):
@@ -146,6 +116,7 @@ class Parser:
         self.adjs = set()
         self.dps = set()
         self.dists = Counter()
+        self.trips = set()
 
     def to_sql(self, filename):
         con = opendb(filename, remove=True)
@@ -153,6 +124,7 @@ class Parser:
         insert_adjacency(con, self.adjs)
         insert_destpair(con, self.dps)
         insert_distance(con, self.dists)
+        insert_triplets(con, self.trips)
         con.close()
 
 
@@ -165,14 +137,14 @@ def insert_address(con: sqlite3.Connection, addrs: Set):
 
 def insert_adjacency(con: sqlite3.Connection, adjs: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO adjacency (hop1, hop2, distance, type, special) VALUES (?, ?, ?, ?, ?)', adjs)
+    cur.executemany('INSERT INTO adjacency (hop1, hop2, hop3, plusone, distance, type) VALUES (?, ?, ?, ?, ?, ?)', adjs)
     cur.close()
     con.commit()
 
 
 def insert_destpair(con: sqlite3.Connection, dps: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO destpair (addr, asn) VALUES (?, ?)', dps)
+    cur.executemany('INSERT INTO destpair (addr, asn, echo) VALUES (?, ?, ?)', dps)
     cur.close()
     con.commit()
 
@@ -180,6 +152,13 @@ def insert_destpair(con: sqlite3.Connection, dps: Set):
 def insert_distance(con: sqlite3.Connection, dists: Counter):
     cur = con.cursor()
     cur.executemany('INSERT INTO distance (hop1, hop2, distance) VALUES (?, ?, ?)', ((x, y, n) for (x, y), n in dists.items()))
+    cur.close()
+    con.commit()
+
+
+def insert_triplets(con: sqlite3.Connection, trips: Set):
+    cur = con.cursor()
+    cur.executemany('INSERT INTO triplets (hop1, hop2, hop3) VALUES (?, ?, ?)', trips)
     cur.close()
     con.commit()
 

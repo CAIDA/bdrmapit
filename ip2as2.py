@@ -16,8 +16,8 @@ split = re.compile('[_,]')
 
 
 def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: str = None, bgp: BGP = None, as2org=None):
-    ixp_prefixes = list(pd.read_csv(ixp_prefixes, comment='#').itertuples(index=False)) if ixp_prefixes is not None else []
-    ixp_asns = []
+    ixp_prefixes = pd.read_csv(ixp_prefixes, comment='#').iloc[:, 0] if ixp_prefixes is not None else []
+    ixp_asns = set(pd.read_csv(ixp_asns, comment='#').iloc[:, 0]) if ixp_asns else []
     rt = RoutingTable()
     bgp_ixp = []
     for address, prefixlen, asn in read_prefixes(prefixes, bgp=bgp, as2org=as2org):
@@ -38,12 +38,12 @@ def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: str = 
                 rt.add_rir(prefix, prefixlen, asn)
     for address, prefixlen in bgp_ixp:
         rt.add_ixp(address, prefixlen)
-    for row in ixp_prefixes:
-        if row.network:
+    for prefix in ixp_prefixes:
+        if prefix:
             try:
-                rt.add_ixp(row.network, row.prefixlen, ixpid=row.id, name=row.name)
+                rt.add_ixp(prefix)
             except TypeError:
-                print('TypeError:', row.prefix)
+                print('TypeError:', prefix)
     rt.add_private()
     rt.add_multicast()
     rt.add_default()

@@ -1,6 +1,4 @@
 import sqlite3
-from collections import defaultdict
-from sys import stderr
 from typing import Iterable, Tuple
 
 from as2org import AS2Org
@@ -20,21 +18,25 @@ class CreateObjs:
         self.as2org = as2org
         self.bgp = bgp
 
-    def add_address(self, addr):
+    def add_address(self, addr, num):
         asn = self.ip2as[addr]
-        if asn > -2 or asn <= -100:
+        if asn > -2:
             org = self.as2org[asn]
-            self.g.add_interface(addr, asn, org, 0)
+            self.g.add_interface(addr, asn, org, num)
             return 1
         return 0
 
     def read_addresses(self, address: Iterable[Tuple[str, int]] = None, increment=1000000):
         i = 0
         if address is None:
-            address = self.con.execute('SELECT addr, 0 FROM address')
+            try:
+                address = self.con.execute('SELECT addr, num FROM address')
+            except sqlite3.OperationalError:
+                # print('No num column. Ignoring nums.')
+                address = self.con.execute('SELECT addr, 0 FROM address')
         pb = Progress(message='Addresses', increment=increment, callback=lambda: '{:,d}'.format(i))
         for addr, num in pb.iterator(address):
-            i += self.add_address(addr)
+            i += self.add_address(addr, num)
 
     def alias_resolution(self, filename: str, useall=False, increment=1000000):
         i = 0
@@ -64,27 +66,25 @@ class CreateObjs:
                     j += 1
         self.g.finalize_routers()
 
-    def create_graph(self, adjs=None, increment=1000000, filename=None):
-        if filename:
-            self.con = sqlite3.connect(filename)
-        if adjs is None:
-            Progress.message('Reading distances', file=stderr)
-            adjs = set(self.con.execute('select hop1, hop2 from distance where distance > 0'))
+    def create_graph(self, edges=None, adjs=None, increment=1000000):
         used = 0
-        pb = Progress(message='Creating edges', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
-        for x, y, dist, icmp_type, special in pb.iterator(self.con.execute('SELECT hop1, hop2, distance, type, special FROM adjacency')):
-            if (x, y) not in adjs:
-                adist = 10
-            else:
-                adist = 0
-            used += self.g.add_edge(x, y, dist + adist, icmp_type, special=special)
+        if adjs is None:
+            Progress.message('Reading distances')
+            adjs = set(self.con.execute('select hop1, hop2 from distance where distance > 0'))
+        pb = Progress(message='Adding neighbors', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
+        if edges is None:
+            edges = self.con.execute('select hop1, hop2, distance, type from adjacency where distance > 0')
+        for h1, h2, dist, icmp_type in pb.iterator(edges):
+            if (h1, h2) not in adjs:
+                dist = 10
+            used += self.g.add_edge(h1, h2, dist, icmp_type)
         self.g.finalize_edges()
 
     def destpairs(self, dps=None, increment=500000):
         used = 0
         pb = Progress(message='Dest pairs', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
         if dps is None:
-            query = 'SELECT addr, asn FROM destpair WHERE asn > 0'
+            query = 'SELECT addr, asn FROM destpair WHERE asn > 0 AND not echo'
             dps = self.con.execute(query)
         for addr, dest_asn in pb.iterator(dps):
             self.g.add_dest(addr, dest_asn)

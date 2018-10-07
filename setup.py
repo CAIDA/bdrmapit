@@ -17,7 +17,7 @@ setup(
         'as2org.pyx',
         # 'updates_dict.pyx',
         # 'create_objs.pyx',
-        'traceroute/hop.pyx'
+        # 'traceroute/hop.pyx'
     ], nthreads=0)
     # ext_modules=cythonize(['ip2as.py'])
 )

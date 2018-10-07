@@ -20,21 +20,25 @@ class CreateObjs:
         self.as2org = as2org
         self.bgp = bgp
 
-    def add_address(self, addr):
+    def add_address(self, addr, num):
         asn = self.ip2as[addr]
-        if asn > -2 or asn <= -100:
+        if asn > -2:
             org = self.as2org[asn]
-            self.g.add_interface(addr, asn, org, 0)
+            self.g.add_interface(addr, asn, org, num)
             return 1
         return 0
 
     def read_addresses(self, address: Iterable[Tuple[str, int]] = None, increment=1000000):
         i = 0
         if address is None:
-            address = self.con.execute('SELECT addr, 0 FROM address')
+            try:
+                address = self.con.execute('SELECT addr, num FROM address')
+            except sqlite3.OperationalError:
+                # print('No num column. Ignoring nums.')
+                address = self.con.execute('SELECT addr, 0 FROM address')
         pb = Progress(message='Addresses', increment=increment, callback=lambda: '{:,d}'.format(i))
         for addr, num in pb.iterator(address):
-            i += self.add_address(addr)
+            i += self.add_address(addr, num)
 
     def alias_resolution(self, filename: str, useall=False, increment=1000000):
         i = 0
@@ -64,27 +68,52 @@ class CreateObjs:
                     j += 1
         self.g.finalize_routers()
 
-    def create_graph(self, adjs=None, increment=1000000, filename=None):
+    def create_graph(self, edges=None, plusone=None, adjs=None, increment=1000000, filename=None):
         if filename:
             self.con = sqlite3.connect(filename)
+        used = 0
+        extras = defaultdict(set)
+        before = defaultdict(set)
+        plusany = defaultdict(bool)
+        if plusone is None:
+            Progress.message('Reading plus1s', file=stderr)
+            plusone = set(self.con.execute('select hop1, hop2 from adjacency WHERE plusone = true'))
+            Progress.message('Plus1: {:,d}'.format(len(plusone)), file=stderr)
         if adjs is None:
             Progress.message('Reading distances', file=stderr)
             adjs = set(self.con.execute('select hop1, hop2 from distance where distance > 0'))
-        used = 0
-        pb = Progress(message='Creating edges', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
-        for x, y, dist, icmp_type, special in pb.iterator(self.con.execute('SELECT hop1, hop2, distance, type, special FROM adjacency')):
-            if (x, y) not in adjs:
+        pb = Progress(message='Adding neighbors', increment=increment, callback=lambda: 'Seen {:,d}'.format(len(before)))
+        if edges is None:
+            edges = self.con.execute('select hop1, hop2, hop3, distance, type from adjacency where distance > 0')
+        for h1, h2, h3, dist, icmp_type in pb.iterator(edges):
+            reverse = (h1, h2) in plusone
+            if h1:
+                before[h2, h3].add(h1)
+            plusany[h2, h3] |= reverse
+            extras[h2, h3].add((dist, icmp_type))
+        allplus = {(h1, h2) for (h2, h3), h1s in before.items() if plusany[h2, h3] for h1 in h1s}
+        Progress.message('All Plus {:,d}'.format(len(allplus)), file=stderr)
+        pb = Progress(len(before), 'Creating edges', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
+        for (h2, h3), extra in pb.iterator(extras.items()):
+            if plusany[(h2, h3)]:
+                special = 2
+            elif (h2, h3) in allplus:
+                special = 1
+            else:
+                special = 0
+            if (h2, h3) not in adjs:
                 adist = 10
             else:
                 adist = 0
-            used += self.g.add_edge(x, y, dist + adist, icmp_type, special=special)
+            for dist, icmp_type in extra:
+                used += self.g.add_edge(h2, h3, dist + adist, icmp_type, special=special)
         self.g.finalize_edges()
 
     def destpairs(self, dps=None, increment=500000):
         used = 0
         pb = Progress(message='Dest pairs', increment=increment, callback=lambda: 'Used {:,d}'.format(used))
         if dps is None:
-            query = 'SELECT addr, asn FROM destpair WHERE asn > 0'
+            query = 'SELECT addr, asn FROM destpair WHERE asn > 0 AND not echo'
             dps = self.con.execute(query)
         for addr, dest_asn in pb.iterator(dps):
             self.g.add_dest(addr, dest_asn)

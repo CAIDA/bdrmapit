@@ -1,3 +1,4 @@
+from math import floor
 from typing import List, Dict
 
 from as2org import AS2Org
@@ -24,14 +25,11 @@ class HybridGraph(AbstractGraph):
         self.redges = PriorityDict()
         self.iedges = PriorityDict()
         self.rases = PriorityDict()
+        self.rinterfaces = PriorityDict()
         self.routers = []
         self.routers_succ = []
         self.routers_nosucc = []
         self.interfaces_pred = []
-        self.rrrelated = DictSet()
-        self.irrelated = DictSet()
-        self.rirelated = DictSet()
-        self.iirelated = DictSet()
 
     def add_interface(self, address: str, asn: int, org: str, num: int):
         interface = Interface(address, asn, org, num)
@@ -46,41 +44,36 @@ class HybridGraph(AbstractGraph):
         interface = self.address_interface[address]
         self.interface_dests[interface].add(asn)
 
-    def add_edge(self, xaddr, yaddr, distance, icmp_type, special=0):
+    def add_edge(self, xaddr, yaddr, distance, icmp_type):
         x = self.address_interface[xaddr]
         y = self.address_interface[yaddr]
         xrouter = self.interface_router[x]
         yrouter = self.interface_router[y]
         if xrouter != yrouter:
+            multiples = floor(icmp_type / 256)
+            remainder = icmp_type % 256
             if distance == 1 or x.asn == y.asn:
-                if icmp_type != 0:
+                if remainder != 0:
                     priority = 1
                 else:
                     priority = 2
             else:
                 priority = 3
-            if special == 1:
-                priority += 0.1
-                self.redges.add(xrouter, y, priority)
+            if multiples > 0:
+                priority += .5
+            if multiples == 1:
                 self.redges.add(yrouter, x, priority)
+                self.rases.add((yrouter, x), y.asn, priority)
+                self.rinterfaces.add((yrouter, x), y, priority)
+            elif multiples == 2:
+                self.redges.add(xrouter, y, priority)
                 self.rases.add((xrouter, y), x.asn, priority)
-                self.rases.add((yrouter, x), x.asn, priority)
-            elif special == 2 or special == 3:
-                priority += 0.1
-                self.iedges.add(y, x, priority)
-                self.iedges.add(x, y, priority)
+                self.rinterfaces.add((xrouter, y), x, priority)
             else:
                 self.redges.add(xrouter, y, priority)
                 self.rases.add((xrouter, y), x.asn, priority)
+                self.rinterfaces.add((xrouter, y), x, priority)
                 self.iedges.add(y, x, priority)
-            self.rrrelated[xrouter].add(yrouter)
-            self.rrrelated[yrouter].add(xrouter)
-            self.rirelated[xrouter].add(y)
-            self.rirelated[yrouter].add(x)
-            self.irrelated[x].add(yrouter)
-            self.irrelated[y].add(xrouter)
-            self.iirelated[x].add(y)
-            self.iirelated[y].add(x)
             return 1
         return 0
 
@@ -88,6 +81,7 @@ class HybridGraph(AbstractGraph):
         self.redges = PriorityDict()
         self.iedges = PriorityDict()
         self.rases = PriorityDict()
+        self.rinterfaces = PriorityDict()
 
     def finalize_dests(self):
         self.interface_dests.finalize()

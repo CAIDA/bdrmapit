@@ -37,6 +37,7 @@ def main():
     parser.add_argument('-g', '--groups', action='store_true')
     parser.add_argument('-A', '--all', action='store_true')
     parser.add_argument('-o', '--outputdir', required=True)
+    parser.add_argument('-p', '--poolsize', default=30, type=int)
     args = parser.parse_args()
 
     outputdir = args.outputdir
@@ -53,7 +54,7 @@ def main():
     for filename in files:
         m = re.search(r'\.([-a-z0-9]+)\.warts.db', filename)
         mfiles[m.group(1)].append(filename)
-    orgs = {as2org[asn] for asn in args.exclude}
+    orgs = {as2org[asn] for asn in args.exclude} if args.exclude else set()
     for monitor in df[df.org.isin(orgs)].monitor:
         if monitor in mfiles:
             del mfiles[monitor]
@@ -61,7 +62,7 @@ def main():
         Progress.set_output(True)
         pb = Progress(len(mfiles), 'Combining')
         Progress.set_output(False)
-        with Pool(30) as p:
+        with Pool(args.poolsize) as p:
             for _ in pb.iterator(p.imap_unordered(combinep, mfiles.items())):
                 pass
         Progress.set_output(True)

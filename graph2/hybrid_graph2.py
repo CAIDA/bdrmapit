@@ -1,8 +1,9 @@
-from typing import List, Dict
+from typing import List, Dict, Set
 
 from as2org import AS2Org
 from bgp.bgp import BGP
-from graph.abstract_graph import InterfaceRouter, DictBackup, RouterInterfaces, RouterDests, AbstractGraph, PriorityDict
+from graph.abstract_graph import InterfaceRouter, DictBackup, RouterInterfaces, RouterDests, NEXTHOP, ECHO, MULTI, \
+    AbstractGraph
 from graph.interface import Interface
 from graph.router import Router
 from utils.progress import Progress
@@ -21,17 +22,25 @@ class HybridGraph(AbstractGraph):
         self.router_dests = RouterDests(self.interface_dests)
         self.modified_interface_dests = DictSet()
         self.modified_router_dests = RouterDests(self.modified_interface_dests)
-        self.redges = PriorityDict()
-        self.iedges = PriorityDict()
-        self.rases = PriorityDict()
+        self.rnexthop = DictSet()
+        self.rrouter = DictSet()
+        self.recho = DictSet()
+        self.rmulti = DictSet()
+        self.inexthop = DictSet()
+        self.irouter = DictSet()
+        self.iecho = DictSet()
+        self.imulti = DictSet()
+        self.interface_succtype = {}
+        self.rnh_ases = DictSet()
+        self.re_ases = DictSet()
+        self.rm_ases = DictSet()
+        self.rnh_interfaces = DictSet()
+        self.re_interfaces = DictSet()
+        self.rm_interfaces = DictSet()
         self.routers = []
         self.routers_succ = []
         self.routers_nosucc = []
         self.interfaces_pred = []
-        self.rrrelated = DictSet()
-        self.irrelated = DictSet()
-        self.rirelated = DictSet()
-        self.iirelated = DictSet()
 
     def add_interface(self, address: str, asn: int, org: str, num: int):
         interface = Interface(address, asn, org, num)
@@ -46,57 +55,70 @@ class HybridGraph(AbstractGraph):
         interface = self.address_interface[address]
         self.interface_dests[interface].add(asn)
 
-    def add_edge(self, xaddr, yaddr, distance, icmp_type, special=0):
+    def add_edge(self, xaddr, yaddr, distance, icmp_type):
         x = self.address_interface[xaddr]
         y = self.address_interface[yaddr]
         xrouter = self.interface_router[x]
         yrouter = self.interface_router[y]
         if xrouter != yrouter:
-            if distance == 1 or x.asn == y.asn:
+            if distance == 1:
                 if icmp_type != 0:
-                    priority = 1
+                    self.rnexthop[xrouter].add(y)
+                    self.rnh_ases[xrouter, y].add(x.asn)
+                    self.rnh_interfaces[xrouter, y].add(x)
+                    self.inexthop[y].add(x)
                 else:
-                    priority = 2
+                    self.recho[xrouter].add(y)
+                    self.re_ases[xrouter, y].add(x.asn)
+                    self.re_interfaces[xrouter, y].add(x)
+                    self.iecho[y].add(x)
             else:
-                priority = 3
-            if special == 1:
-                priority += 0.1
-                self.redges.add(xrouter, y, priority)
-                self.redges.add(yrouter, x, priority)
-                self.rases.add((xrouter, y), x.asn, priority)
-                self.rases.add((yrouter, x), x.asn, priority)
-            elif special == 2 or special == 3:
-                priority += 0.1
-                self.iedges.add(y, x, priority)
-                self.iedges.add(x, y, priority)
-            else:
-                self.redges.add(xrouter, y, priority)
-                self.rases.add((xrouter, y), x.asn, priority)
-                self.iedges.add(y, x, priority)
-            self.rrrelated[xrouter].add(yrouter)
-            self.rrrelated[yrouter].add(xrouter)
-            self.rirelated[xrouter].add(y)
-            self.rirelated[yrouter].add(x)
-            self.irrelated[x].add(yrouter)
-            self.irrelated[y].add(xrouter)
-            self.iirelated[x].add(y)
-            self.iirelated[y].add(x)
+                self.rmulti[xrouter].add(y)
+                self.rm_ases[xrouter, y].add(x.asn)
+                self.rm_interfaces[xrouter, y].add(x)
+                self.imulti[y].add(x)
             return 1
         return 0
-
-    def clear_edges(self):
-        self.redges = PriorityDict()
-        self.iedges = PriorityDict()
-        self.rases = PriorityDict()
 
     def finalize_dests(self):
         self.interface_dests.finalize()
 
     def finalize_edges(self):
-        pass
+        self.rnexthop.finalize()
+        self.recho.finalize()
+        self.rmulti.finalize()
+        self.rnh_ases.finalize()
+        self.re_ases.finalize()
+        self.rm_ases.finalize()
+        self.inexthop.finalize()
 
     def finalize_routers(self):
         self.router_interfaces.finalize()
+
+    def previous_routers(self, interface):
+        return {self.interface_router[p] for p in self.interfaces_pred}
+
+    def iedges(self, interface):
+        return self.inexthop[interface]
+
+    def router_edge_dests(self, router, subsequent, rtype=0):
+        dests = set()
+        if rtype == 0:
+            if router in self.rnexthop:
+                rtype = NEXTHOP
+            elif router in self.recho:
+                rtype = ECHO
+            else:
+                rtype = MULTI
+        if rtype == NEXTHOP:
+            d = self.rnh_interfaces
+        elif rtype == ECHO:
+            d = self.re_interfaces
+        else:
+            d = self.rm_interfaces
+        for interface in d[router, subsequent]:
+            dests.update(self.modified_interface_dests[interface])
+        return dests
 
     def filter_addresses(self, addresses: List[str]):
         for address in addresses:
@@ -144,7 +166,7 @@ class HybridGraph(AbstractGraph):
                                                                                    len(self.routers_nosucc),
                                                                                    len(self.interfaces_pred)))
         for interface in pb.iterator(self.address_interface.values()):
-            if self.iedges.priority.get(interface, float('inf')) < 2:
+            if interface in self.inexthop:
                 self.interfaces_pred.append(interface)
             router = self.interface_router[interface]
             if router != interface:
@@ -152,7 +174,7 @@ class HybridGraph(AbstractGraph):
                     continue
                 routers.add(router)
             self.routers.append(router)
-            if router in self.redges:
+            if router in self.rnexthop or router in self.recho or router in self.rmulti:
                 self.routers_succ.append(router)
             else:
                 self.routers_nosucc.append(router)

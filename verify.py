@@ -47,8 +47,8 @@ class Verify:
         conn_org = self.bdrmapit.as2org.name(row.conn_asn)
         if torg != tconn_org:
             if org != conn_org:
-                if (torg == org and tconn_org == conn_org) or (
-                        torg == conn_org and tconn_org == org):
+                if (torg == org and tconn_org == conn_org) or (row.dataset == 'TWC' and torg == conn_org and tconn_org == org):
+                # if torg == org and tconn_org == conn_org:
                     return 'TP'
                 else:
                     return 'FP'
@@ -100,9 +100,7 @@ def comparison(g: pd.DataFrame):
     itn = lv.get('TN', 0)
     ifn = lv.get('FN', 0)
     ppv, recall = calcppv(ig)
-    # ppv = itp / (itp + ifp)
-    recall = itp / (itp + ifn)
-    iaccuracy = (itp + itn) / (itp + itn + ifp + ifn)
+    iaccuracy = itp / (itp + ifp + ifn)
     small = ig[ig.cone <= 0]
     large = ig[ig.cone > 0]
     ppvsmall, recallsmall = calcppv(small)

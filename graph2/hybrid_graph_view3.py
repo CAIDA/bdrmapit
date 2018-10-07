@@ -5,9 +5,7 @@ from bgp.bgp import BGP
 from graph.abstract_graph import AbstractGraph
 from graph.hybrid_graph import HybridGraph, DictBackup
 from graph.interface import Interface
-from graph.router import Router
 from utils.progress import Progress
-from utils.utils import File2, DictSet
 
 
 class NameRouterBackup(dict):
@@ -24,14 +22,14 @@ class NameRouterBackup(dict):
 
 class HybridGraphView(AbstractGraph):
 
-    def __init__(self, graph: AbstractGraph, copy=False):
+    def __init__(self, graph: AbstractGraph):
         super().__init__()
         self.graph = graph
-        self.address_interface = DictBackup(graph.address_interface) if not copy else dict(graph.address_interface)
+        self.address_interface = DictBackup(graph.address_interface)
         self.interface_router = DictBackup(graph.interface_router)
         self.name_router = NameRouterBackup(graph.name_router, self.address_interface)
         self.router_interfaces = DictBackup(graph.router_interfaces)
-        self.interface_dests: Dict[Interface, Set[int]] = DictBackup(graph.interface_dests) if not copy else DictSet({k: set(v) for k, v in graph.interface_dests.items()})
+        self.interface_dests: Dict[Interface, Set[int]] = DictBackup(graph.interface_dests)
         self.router_dests = DictBackup(graph.router_dests)
         self.modified_interface_dests = DictBackup(graph.modified_interface_dests)
         self.modified_router_dests = DictBackup(graph.modified_router_dests)
@@ -51,7 +49,7 @@ class HybridGraphView(AbstractGraph):
         self.routers = []
         self.routers_succ = []
         self.routers_nosucc = []
-        self.interfaces_pred = [] if not copy else list(graph.interfaces_pred)
+        self.interfaces_pred = []
 
     def add_interface(self, address: str, asn: int, org: str, num: int):
         if address in self.graph.address_interface and address not in self.address_interface:
@@ -64,9 +62,7 @@ class HybridGraphView(AbstractGraph):
         self.address_interface[address] = interface
 
     def add_router(self, name: str):
-        router = Router(name)
-        self.name_router[name] = router
-        return router
+        raise NotImplementedError()
 
     def add_dest(self, address: str, asn: int):
         interface = self.address_interface[address]
@@ -138,50 +134,7 @@ class HybridGraphView(AbstractGraph):
         pass
 
     def group_interfaces(self, router, interfaces):
-        if isinstance(router, str):
-            router = self.name_router[router]
-        rnexthop = self.rnexthop.get(router, set())
-        recho = self.recho.get(router, set())
-        rmulti = self.rmulti.get(router, set())
-        rlist = []
-        for interface in interfaces:
-            if isinstance(interface, str):
-                interface = self.address_interface[interface]
-            iasn = interface.asn
-            rlist.append(interface)
-            self.interface_router[interface] = router
-            if interface.asn > -1:
-                for succ in self.rnexthop[interface]:
-                    if succ not in interfaces:
-                        rnexthop.add(succ)
-                        rnh_ases = self.rnh_ases.get((router, succ), set())
-                        rnh_ases.add(iasn)
-                        self.rnh_ases[router, succ] = rnh_ases
-                        rnh_interfaces = self.rnh_interfaces.get((router, succ), set())
-                        rnh_interfaces.add(succ)
-                        self.rnh_interfaces[router, succ] = rnh_interfaces
-                for succ in self.recho[interface]:
-                    if succ not in interfaces:
-                        recho.add(succ)
-                        re_ases = self.re_ases.get((router, succ), set())
-                        re_ases.add(iasn)
-                        self.re_ases[router, succ] = re_ases
-                        re_interfaces = self.re_interfaces.get((router, succ), set())
-                        re_interfaces.add(succ)
-                        self.re_interfaces[router, succ] = re_interfaces
-                for succ in self.rmulti[interface]:
-                    if succ not in interfaces:
-                        rmulti.add(succ)
-                        rm_ases = self.rm_ases.get((router, succ), set())
-                        rm_ases.add(iasn)
-                        self.rm_ases[router, succ] = rm_ases
-                        rm_interfaces = self.rm_interfaces.get((router, succ), set())
-                        rm_interfaces.add(succ)
-                        self.rm_interfaces[router, succ] = rm_interfaces
-        self.rnexthop[router] = rnexthop
-        self.recho[router] = recho
-        self.rmulti[router] = rmulti
-        self.router_interfaces[router] = rlist
+        raise NotImplementedError()
 
     def set_dests(self, as2org: AS2Org, bgp: BGP, increment=100000):
         pb = Progress(len(self.interface_dests), 'Modifying interface dests', increment=increment)
@@ -203,7 +156,7 @@ class HybridGraphView(AbstractGraph):
             self.router_dests[router] = rdests
             self.modified_router_dests[router] = rmodified
 
-    def set_routers_interfaces(self, useall=False, increment=500000):
+    def set_routers_interfaces(self, increment=500000):
         routers = set()
         pb = Progress(len(self.address_interface), 'Routers and interfaces', increment=increment, callback=lambda: 'Succ {:,d} NoSucc {:,d} Pred {:,d}'.format(len(self.routers_succ), len(self.routers_nosucc), len(self.interfaces_pred)))
         for interface in pb.iterator(self.address_interface.values()):
@@ -218,8 +171,6 @@ class HybridGraphView(AbstractGraph):
             if router in self.rnexthop or router in self.recho or router in self.rmulti:
                 self.routers_succ.append(router)
             elif router in self.graph.rnexthop or router in self.graph.recho or router in self.graph.rmulti:
-                if useall:
-                    self.routers_succ.append(router)
                 continue
             else:
                 self.routers_nosucc.append(router)
