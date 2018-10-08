@@ -3,7 +3,9 @@ import os
 import socket
 import sqlite3
 from collections import Counter
-from typing import Set, Tuple, Dict, Iterable
+from itertools import groupby
+from operator import itemgetter
+from typing import Set, Tuple, Dict, Iterable, List
 
 from traceroute.atlas_trace import AtlasTrace
 from traceroute.hop import Hop
@@ -33,6 +35,13 @@ pairs: Set[Tuple[str, str]] = None
 basns: Dict[str, Set[int]] = None
 aasns: Dict[str, Set[int]] = None
 marked: Set[str] = None
+
+
+def unique_justseen(iterable, key=None):
+    "List unique elements, preserving order. Remember only the element just seen."
+    # unique_justseen('AAAABBBCCDAABBB') --> A B C D A B
+    # unique_justseen('ABBCcAD', str.lower) --> A B C A D
+    return map(next, map(itemgetter(1), groupby(iterable, key)))
 
 
 def opendb(filename, remove=False):
@@ -66,6 +75,7 @@ class Parser:
         self.adjs = set()
         self.dps = set()
         self.dists = Counter()
+        self.trips = set()
 
     def __iter__(self):
         if isinstance(self.filename, str):
@@ -106,11 +116,19 @@ class Parser:
             self.dps.update((y.addr, dest_asn) for y in trace.hops if y.icmp_type != 0)
         vrfs = set()
         for i in range(numhops):
-            w = trace.hops[i - 1] if numhops > 0 else None
             x = trace.hops[i]
-            y = trace.hops[i + 1] if i < numhops - 1 else None
-            z = trace.hops[i + 2] if i < numhops - 2 else None
             if x.addr in marked:
+                y = trace.hops[i+1] if i < numhops - 1 else None
+                w = None
+                for j in range(i-1, -1, -1):
+                    w = trace.hops[j]
+                    if w.addr != x.addr:
+                        break
+                z = None
+                for j in range(i+2, numhops):
+                    z = trace.hops[j]
+                    if z.addr != y.addr:
+                        break
                 if w and (w.addr, x.addr) in pairs:
                     continue
                 if w and w.asn in aasns[x.addr]:
@@ -136,6 +154,21 @@ class Parser:
                 special = NONE
             self.adjs.add((x.addr, y.addr, distance, y.icmp_type, special))
             self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
+
+    def find_trips(self, trace):
+        # hops: List[Hop] = list(trace.unique_justseen())
+        hops: List[Hop] = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        numhops = len(hops)
+        for i in range(1, numhops - 1):
+            x = hops[i]
+            if x.addr in marked:
+                w = hops[i - 1]
+                y = hops[i + 1]
+                if (x.addr, y.addr) in pairs or (w.addr, x.addr) in pairs:
+                    continue
+                if w.asn == 0 or y.asn == 0:
+                    continue
+                self.trips.add((w.asn, x.addr, y.asn))
 
     def parse(self):
         for trace in self:

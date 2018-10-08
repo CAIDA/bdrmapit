@@ -71,3 +71,10 @@ class AbstractTrace:
 
     def remove_private(self):
         self.hops = [hop for hop in self.hops if not hop.private]
+
+    def unique_justseen(self):
+        seen = set()
+        for h in self.hops:
+            if h.addr not in seen:
+                yield h
+                seen.add(h.addr)

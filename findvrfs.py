@@ -60,31 +60,42 @@ def extract_pairs(filename):
     basns = defaultdict(set)
     aasns = defaultdict(set)
     addrs = set()
-    with Warts(filename, json=True) as f:
+    close = False
+    if isinstance(filename, str):
+        f = Warts(filename, json=True)
+        close = True
         pb = Progress(message='Reading', increment=100000, callback=lambda: 'Pairs {:,d}'.format(len(pairs)))
-        for j in pb.iterator(f):
+    else:
+        pb = Progress(len(filename), message='Reading', increment=10000, callback=lambda: 'Pairs {:,d}'.format(len(pairs)))
+        f = filename
+    for j in pb.iterator(f):
+        if isinstance(j, dict):
             trace = WartsTrace(j, ip2as=ip2as)
-            addrs.update(trace.addrs)
-            for i in range(len(trace.hops) - 1):
-                x = trace.hops[i]
-                y = trace.hops[i+1]
-                w = trace.hops[i-1] if i > 0 else None
-                z = trace.hops[i+2] if i < len(trace.hops) - 2 else None
-                if y.icmp_type != 0:
-                # if x.addr == '206.72.210.14' and y.addr == '206.72.210.63':
-                #     print(x.asn, y.asn, -100 >= x.asn == y.asn, file=sys.stderr)
-                    xnum = pton(x.addr)
-                    ynum = pton(y.addr)
-                    if abs(xnum - ynum) == 1 or (-100 >= x.asn == y.asn):
-                        pairs.add((x.addr, y.addr))
-                        if w and w.addr != x.addr:
-                            if w.asn > 0:
-                                basns[x.addr, y.addr].add(w.asn)
-                        if z and z.addr != y.addr:
-                            z = trace.hops[i+2]
-                            if z.asn > 0:
-                                aasns[x.addr, y.addr].add(z.asn)
-        return pairs, basns, aasns, addrs
+        else:
+            trace = j
+        addrs.update(trace.addrs)
+        for i in range(len(trace.hops) - 1):
+            x = trace.hops[i]
+            y = trace.hops[i+1]
+            w = trace.hops[i-1] if i > 0 else None
+            z = trace.hops[i+2] if i < len(trace.hops) - 2 else None
+            # if y.icmp_type != 0:
+            # if x.addr == '206.72.210.14' and y.addr == '206.72.210.63':
+            #     print(x.asn, y.asn, -100 >= x.asn == y.asn, file=sys.stderr)
+            xnum = pton(x.addr)
+            ynum = pton(y.addr)
+            if abs(xnum - ynum) == 1 or (-100 >= x.asn == y.asn):
+                pairs.add((x.addr, y.addr))
+                if w and w.addr != x.addr:
+                    if w.asn != 0:
+                        basns[x.addr, y.addr].add(w.asn)
+                if z and z.addr != y.addr:
+                    z = trace.hops[i+2]
+                    if z.asn != 0:
+                        aasns[x.addr, y.addr].add(z.asn)
+    if close:
+        f.close()
+    return pairs, basns, aasns, addrs
 
 
 def addasns(basns, aasns, aspaths):

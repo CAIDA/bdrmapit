@@ -128,9 +128,15 @@ def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, orig
     if rsucc_asn > 0 and rsucc_asn != isucc.asn:
         log.debug('\tThird party: Router={}, RASN={}'.format(rsucc.name, rsucc_asn))
         if not any(isucc.org == bdrmapit.as2org[asn] for asn in origins):
+            # print(True)
             if any(asn == rsucc_asn or bdrmapit.bgp.rel(asn, rsucc_asn) for asn in origins):
+                # print(True)
                 dests = bdrmapit.graph.modified_router_dests[router]
+                if log.isdebug():
+                    log.debug('\tISUCC in Dests: {} in {}'.format(isucc.asn, dests))
                 if isucc.asn not in dests:
+                    return rsucc_asn
+                elif bdrmapit.bgp.rel(isucc.asn, rsucc_asn) and not any(bdrmapit.bgp.rel(isucc.asn, o) for o in origins):
                     return rsucc_asn
     if rtype == 2 or succ_asn <= 0 or (rsucc_asn > 0 and isucc.asn != rsucc_asn):
         return isucc.asn
@@ -324,10 +330,10 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
                 for vr in votes_rels:
                     if bdrmapit.as2org[vr] == bdrmapit.as2org[vasn]:
                         votes[vr] += votes.pop(vasn, 0)
-    if len(votes_rels) > 2:
-        for iasn in iasns:
-            if all(iasn == sasn or bdrmapit.bgp.rel(iasn, sasn) for sasn in succs):
-                return iasn, 100000
+    # if len(votes_rels) > 2:
+    #     for iasn in iasns:
+    #         if all(iasn == sasn or bdrmapit.bgp.rel(iasn, sasn) for sasn in succs):
+    #             return iasn, 100000
     # asns = max_num(votes, key=lambda x: all(bdrmapit.bgp.rel(x, a) for a in votes))
     # if len(asns) >= 1:
     #     return asns[0], 100000
