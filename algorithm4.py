@@ -1,8 +1,5 @@
-import socket
-import struct
 import sys
 from collections import Counter, defaultdict
-from math import modf
 from typing import List, Tuple, Set, Dict, Union
 
 from graph.bdrmapit import Bdrmapit
@@ -36,48 +33,20 @@ HIDDEN_NOINTER = 200
 
 def router_changed(bdrmapit: Bdrmapit, rupdates: Updates, rchanged: Set[Router], ichanged: Set[Interface]):
     for router in rupdates.changes:
-        rchanged.update(r for r in bdrmapit.graph.rrrelated[router] if r in bdrmapit.graph.redges)
-        ichanged.update(i for i in bdrmapit.graph.rirelated[router] if bdrmapit.graph.iedges.priority.get(i, 100) < 2)
+        for interface in get_edges(bdrmapit, router)[0]:
+            if bdrmapit.graph.inexthop[interface]:
+                ichanged.add(interface)
         for interface in bdrmapit.graph.router_interfaces[router]:
-            rchanged.update(r for r in bdrmapit.graph.irrelated[interface] if r in bdrmapit.graph.redges)
-            ichanged.update(i for i in bdrmapit.graph.iirelated[interface] if bdrmapit.graph.iedges.priority.get(i, 100) < 2)
+            for d in [bdrmapit.graph.inexthop, bdrmapit.graph.iecho, bdrmapit.graph.imulti]:
+                for pred in d[interface]:
+                    rchanged.add(bdrmapit.graph.interface_router[pred])
 
 
-def interface_changed(bdrmapit: Bdrmapit, iupdates: Updates, rchanged: Set[Router], ichanged: Set[Interface]):
+def interface_changed(bdrmapit: Bdrmapit, iupdates: Updates, rchanged: Set[Router]):
     for interface in iupdates.changes:
-        router = bdrmapit.graph.interface_router[interface]
-        rchanged.update(r for r in bdrmapit.graph.rrrelated[router] if r in bdrmapit.graph.redges)
-        ichanged.update(i for i in bdrmapit.graph.rirelated[router] if bdrmapit.graph.iedges.priority.get(i, 100) < 2)
-        rchanged.update(r for r in bdrmapit.graph.irrelated[interface] if r in bdrmapit.graph.redges)
-        ichanged.update(i for i in bdrmapit.graph.iirelated[interface] if bdrmapit.graph.iedges.priority.get(i, 100) < 2)
-
-
-# def router_changed(bdrmapit: Bdrmapit, rupdates: Updates, rchanged: Set[Router], ichanged: Set[Interface]):
-#     for router in rupdates.changes:
-#         edges, rtype = get_edges(bdrmapit, router)
-#         for interface in edges:
-#             if bdrmapit.graph.iedges.priority.get(interface, float('inf')) < 2:
-#                 ichanged.add(interface)
-#             srouter = bdrmapit.graph.interface_router[interface]
-#             if srouter in bdrmapit.graph.redges:
-#                 rchanged.add(srouter)
-#         for interface in bdrmapit.graph.router_interfaces[router]:
-#             for pred in bdrmapit.graph.iedges[interface]:
-#                 if bdrmapit.graph.iedges.priority.get(pred, float('inf')) < 2:
-#                     ichanged.add(pred)
-#                 prouter = bdrmapit.graph.interface_router[pred]
-#                 if prouter in bdrmapit.graph.redges:
-#                     rchanged.add(prouter)
-# 
-# 
-# def interface_changed(bdrmapit: Bdrmapit, iupdates: Updates, rchanged: Set[Router], ichanged: Set[Interface]):
-#     for interface in iupdates.changes:
-#         for pred in bdrmapit.graph.iedges[interface]:
-#             if bdrmapit.graph.iedges.priority.get(pred, float('inf')) < 2:
-#                 ichanged.add(pred)
-#             prouter = bdrmapit.graph.interface_router[pred]
-#             if prouter in bdrmapit.graph.redges:
-#                 rchanged.add(prouter)
+        for d in [bdrmapit.graph.inexthop, bdrmapit.graph.iecho, bdrmapit.graph.imulti]:
+            for pred in d[interface]:
+                rchanged.add(bdrmapit.graph.interface_router[pred])
 
 
 def graph_refinement(bdrmapit: Bdrmapit, routers: List[Router], interfaces: List[Interface], iterations: int = -1,
@@ -98,7 +67,7 @@ def graph_refinement(bdrmapit: Bdrmapit, routers: List[Router], interfaces: List
         rupdates.advance()
         annotate_interfaces(bdrmapit, rupdates, iupdates, interfaces=ichanged)
         ichanged = set()
-        interface_changed(bdrmapit, iupdates, rchanged, ichanged)
+        interface_changed(bdrmapit, iupdates, rchanged)
         iupdates.advance()
         if (rupdates, iupdates) in previous_updates:
             break
@@ -107,36 +76,25 @@ def graph_refinement(bdrmapit: Bdrmapit, routers: List[Router], interfaces: List
     return rupdates, iupdates
 
 
-def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, origins: Set[int], rtype: float,
+def router_heuristics(bdrmapit: Bdrmapit, router: Router, isucc: Interface, origins: Set[int], rtype: int,
                       rupdates: Updates, iupdates: Updates):
+    if isucc.asn == -1:
+        # return max(origins, key=lambda x: (bdrmapit.bgp.conesize[x], -x)) if origins else -1
+        return -1
     rsucc = bdrmapit.graph.interface_router[isucc]
     rsucc_asn = get(bdrmapit, rsucc, rupdates)[0]
     succ_asn = iupdates[isucc][0]
     log.debug('\tASN={}, RASN={}, IASN={}'.format(isucc.asn, rsucc_asn, succ_asn))
-    decimal = round(rtype % 1, 1)
-    log.debug('\tModf={}'.format(decimal))
-    if isucc.asn == 0 or decimal == 0.1:
+    if isucc.asn == 0:
         return rsucc_asn
-    if isucc.asn <= -100:
-        # return max(origins, key=lambda x: (bdrmapit.bgp.conesize[x], -x)) if origins else -1
-        if origins:
-            return peek(origins)
-        else:
-            return -1
     if isucc.asn in origins:
         return isucc.asn
     if rsucc_asn > 0 and rsucc_asn != isucc.asn:
         log.debug('\tThird party: Router={}, RASN={}'.format(rsucc.name, rsucc_asn))
         if not any(isucc.org == bdrmapit.as2org[asn] for asn in origins):
-            # print(True)
             if any(asn == rsucc_asn or bdrmapit.bgp.rel(asn, rsucc_asn) for asn in origins):
-                # print(True)
                 dests = bdrmapit.graph.modified_router_dests[router]
-                if log.isdebug():
-                    log.debug('\tISUCC in Dests: {} in {}'.format(isucc.asn, dests))
                 if isucc.asn not in dests:
-                    return rsucc_asn
-                elif bdrmapit.bgp.rel(isucc.asn, rsucc_asn) and not any(bdrmapit.bgp.rel(isucc.asn, o) for o in origins):
                     return rsucc_asn
     if rtype == 2 or succ_asn <= 0 or (rsucc_asn > 0 and isucc.asn != rsucc_asn):
         return isucc.asn
@@ -151,7 +109,7 @@ def reallocated_test(bdrmapit: Bdrmapit, oasn, newasn):
 
 def reallocated(bdrmapit: Bdrmapit, router: Router, edges: Set[Interface], rtype: int, rupdates: Updates,
                 succs: Counter, succ_origins: Dict[int, Set], iasns: Counter):
-    if rtype % 1 == 0 and len(edges) > 1:
+    if len(edges) > 1:
         same = defaultdict(list)
         for s in edges:
             if s.asn in get_origins(bdrmapit, router, s, rtype):
@@ -311,7 +269,7 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
             num = votes[asn]
             if log.isdebug():
                 log.debug('Votes test: num={} >= max(votes)/2={}'.format(num, (max(votes.values())) / 2))
-            if False and num >= (max(votes.values())) / 2:
+            if num >= (max(votes.values())) / 2:
             # if bdrmapit.bgp.conesize[asn] <= 0 and num >= (max(votes.values())) / 2:
                 return asn, utype + REMAINING_4
     votes_rels = [vasn for vasn in votes if vasn in iasns or any(bdrmapit.bgp.rel(iasn, vasn) for iasn in iasns)]
@@ -330,10 +288,6 @@ def annotate_router(bdrmapit: Bdrmapit, router: Router, rupdates: Updates, iupda
                 for vr in votes_rels:
                     if bdrmapit.as2org[vr] == bdrmapit.as2org[vasn]:
                         votes[vr] += votes.pop(vasn, 0)
-    # if len(votes_rels) > 2:
-    #     for iasn in iasns:
-    #         if all(iasn == sasn or bdrmapit.bgp.rel(iasn, sasn) for sasn in succs):
-    #             return iasn, 100000
     # asns = max_num(votes, key=lambda x: all(bdrmapit.bgp.rel(x, a) for a in votes))
     # if len(asns) >= 1:
     #     return asns[0], 100000
@@ -390,20 +344,32 @@ def annotate_interfaces(bdrmapit: Bdrmapit, rupdates: Updates, iupdates: Updates
 
 
 def annotate_interface(bdrmapit: Bdrmapit, interface, rupdates: Updates):
-    edges = set(bdrmapit.graph.iedges[interface])
-    # priority = bdrmapit.graph.iedges.priority[interface]
+    edges = set(bdrmapit.graph.inexthop[interface])
     if log.isdebug():
-        # log.debug('Edges: {}'.format(edges))
-        log.debug('Rtype: {}'.format(bdrmapit.graph.iedges.priority[interface]))
+        log.debug('Edges: {}'.format(edges))
+        if not edges:
+            log.debug(bdrmapit.graph.imulti[interface])
     votes = Counter()
     for ipred in edges:
         rpred = bdrmapit.graph.interface_router[ipred]
-        asn, _, _ = get(bdrmapit, rpred, rupdates)
+        asn, _, _ = rupdates[rpred]
         if log.isdebug():
             log.debug('Addr={}, Router={}, ASN={}, RASN={}'.format(ipred.address, rpred.name, ipred.asn, asn))
-            log.debug('\tRouter={}, RASN={}'.format(rpred.name, asn))
-        if asn == -1:
+        prefix, _, num = interface.address.rpartition('.')
+        iprefix, _, inum = ipred.address.rpartition('.')
+        same = False
+        if prefix == iprefix:
+            if -1 <= int(num) - int(inum) <= 1:
+                if log.isdebug():
+                    log.debug('Prefix={}, Diff={}, Same={}'.format(prefix, int(num) - int(inum), same))
+                same = True
+        if not same and interface.org == ipred.org:
             asn = ipred.asn
+        else:
+            if log.isdebug():
+                log.debug('Router={}, RASN={}'.format(rpred.name, asn))
+            if asn == -1:
+                asn = ipred.asn
         votes[asn] += 1
     if log.isdebug():
         log.debug('Votes: {}'.format(votes))
@@ -434,10 +400,23 @@ def get(bdrmapit, r: Router, updates: Updates):
 
 
 def get_edges(bdrmapit: Bdrmapit, router):
-    edges = bdrmapit.graph.redges[router]
-    rtype = bdrmapit.graph.redges.priority.get(router, 0)
+    edges = bdrmapit.graph.rnexthop[router]
+    if edges:
+        rtype = 1
+    else:
+        edges = bdrmapit.graph.recho[router]
+        if edges:
+            rtype = 2
+        else:
+            edges = bdrmapit.graph.rmulti[router]
+            rtype = 3
     return set(edges), rtype
 
 
 def get_origins(bdrmapit: Bdrmapit, router: Router, interface: Interface, rtype):
-    return bdrmapit.graph.rases[router, interface]
+    if rtype == 1:
+        return bdrmapit.graph.rnh_ases[router, interface]
+    elif rtype == 2:
+        return bdrmapit.graph.re_ases[router, interface]
+    else:
+        return bdrmapit.graph.rm_ases[router, interface]
