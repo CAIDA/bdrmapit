@@ -18,7 +18,7 @@ dblock = Lock()
 def create():
     con = sqlite3.connect(output)
     cur = con.cursor()
-    cur.execute('''CREATE TABLE found (
+    cur.execute('''CREATE TABLE IF NOT EXISTS found (
   addr TEXT,
   trace TEXT,
   filename TEXT

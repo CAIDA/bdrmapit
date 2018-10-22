@@ -7,6 +7,7 @@ from itertools import groupby
 from operator import itemgetter
 from typing import Set, Tuple, Dict, Iterable, List
 
+from traceroute.abstract_trace import AbstractTrace
 from traceroute.atlas_trace import AtlasTrace
 from traceroute.hop import Hop
 from traceroute.output_type import OutputType
@@ -114,30 +115,8 @@ class Parser:
         dest_asn = trace.dst_asn
         if dest_asn > 0:
             self.dps.update((y.addr, dest_asn) for y in trace.hops if y.icmp_type != 0)
-        vrfs = set()
-        for i in range(numhops):
-            x = trace.hops[i]
-            if x.addr in marked:
-                y = trace.hops[i+1] if i < numhops - 1 else None
-                w = None
-                for j in range(i-1, -1, -1):
-                    w = trace.hops[j]
-                    if w.addr != x.addr:
-                        break
-                z = None
-                for j in range(i+2, numhops):
-                    z = trace.hops[j]
-                    if z.addr != y.addr:
-                        break
-                if w and (w.addr, x.addr) in pairs:
-                    continue
-                if w and w.asn in aasns[x.addr]:
-                    continue
-                if z and z.asn in basns[x.addr]:
-                    continue
-                if (not w or (w.asn > 0 and w.asn not in basns[x.addr])) and (not z or (z.asn > 0 and z.asn in aasns[x.addr])):
-                    continue
-                vrfs.add(x.addr)
+        unique = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        vrfs = self.find_vrfs(unique=unique)
         for i in range(numhops - 1):
             x = trace.hops[i]
             y = trace.hops[i+1]
@@ -155,15 +134,49 @@ class Parser:
             self.adjs.add((x.addr, y.addr, distance, y.icmp_type, special))
             self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
 
-    def find_trips(self, trace):
-        # hops: List[Hop] = list(trace.unique_justseen())
-        hops: List[Hop] = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
-        numhops = len(hops)
-        for i in range(1, numhops - 1):
-            x = hops[i]
+    def prev(self, unique, i, addr):
+        for j in range(i - 1, -1, -1):
+            w = unique[j]
+            if w.addr != addr:
+                return w
+        return None
+
+    def find_vrfs(self, trace: AbstractTrace = None, unique: List[Hop] = None):
+        vrfs = set()
+        if unique is None:
+            unique = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        numhops = len(unique)
+        for i in range(numhops):
+            x = unique[i]
             if x.addr in marked:
-                w = hops[i - 1]
-                y = hops[i + 1]
+                y = unique[i + 1] if i < numhops - 1 else None
+                w = self.prev(unique, i, x.addr)
+                z = None
+                for j in range(i + 2, numhops):
+                    z = unique[j]
+                    if z.addr != y.addr:
+                        break
+                if w and (w.addr, x.addr) in pairs:
+                    continue
+                if w and w.asn in aasns[x.addr]:
+                    continue
+                if z and z.asn in basns[x.addr]:
+                    continue
+                if (not w or (w.asn > 0 and w.asn not in basns[x.addr])) and (
+                        not z or (z.asn > 0 and z.asn in aasns[x.addr])):
+                    continue
+                vrfs.add(x.addr)
+        return vrfs
+
+    def find_trips(self, trace: AbstractTrace = None, unique: List[Hop] = None):
+        if unique is None:
+            unique = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        numhops = len(unique)
+        for i in range(1, numhops - 1):
+            x = unique[i]
+            if x.addr in marked:
+                w = unique[i - 1]
+                y = unique[i + 1]
                 if (x.addr, y.addr) in pairs or (w.addr, x.addr) in pairs:
                     continue
                 if w.asn == 0 or y.asn == 0:

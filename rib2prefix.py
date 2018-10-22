@@ -3,6 +3,7 @@ from argparse import ArgumentParser, FileType
 from collections import Counter, defaultdict
 from multiprocessing.pool import Pool
 from subprocess import Popen, PIPE
+from socket import AF_INET, AF_INET6
 
 import sys
 
@@ -27,7 +28,8 @@ def parserib(filename: str):
         if len(fields) >= 10:
             prefix, _, prefixlen = fields[7].partition('/')
             prefixlen = int(prefixlen)
-            if 8 <= prefixlen <= 25:
+            fam = AF_INET6 if ':' in prefix else AF_INET
+            if (fam == AF_INET and 8 <= prefixlen <= 25) or (fam == AF_INET6 and 8 <= prefixlen <= 121):
                 origin_as = fields[10]
                 t = (prefix, prefixlen, origin_as)
                 counter[t] += 1

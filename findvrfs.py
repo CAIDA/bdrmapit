@@ -6,9 +6,12 @@ import sys
 from argparse import ArgumentParser, FileType
 from collections import defaultdict
 from multiprocessing.pool import Pool
-from typing import List, Set, Tuple, Dict
+from typing import List, Set, Tuple, Dict, DefaultDict
 
 from bgp.routing_table import RoutingTable
+from traceroute.output_type import OutputType
+import traceroute.parser as tp
+from traceroute.parser import Parser
 from traceroute.warts import Warts
 from traceroute.warts_trace import WartsTrace
 from utils.progress import Progress
@@ -52,6 +55,21 @@ def otherside31(x):
         oside = x - 1
     else:
         oside = x + 1
+    return ntop(oside, fam)
+
+
+def otherside30(x):
+    fam = family(x)
+    x = pton(x, fam=fam)
+    remainder = x % 4
+    if remainder == 0:
+        return None
+    elif remainder == 1:
+        oside = x + 1
+    elif remainder == 2:
+        oside = x - 1
+    else:
+        return None
     return ntop(oside, fam)
 
 
@@ -137,8 +155,8 @@ def find_pairs(filenames: List[str], poolsize: int):
 
 def remove_internal(pairs: Set[Tuple[str, str]], basns: Dict[Tuple[str, str], Set[int]], aasns: Dict[Tuple[str, str], Set[int]], addrs: Set[str]):
     pairs2 = set()
-    ba = {}
-    aa = {}
+    ba = defaultdict(set)
+    aa = defaultdict(set)
     pb = Progress(len(pairs), 'Checking', increment=100000, callback=lambda: 'Pairs {:,d} BASNs {:,d} AASNs {:,d}'.format(len(pairs2), len(ba), len(aa)))
     for x, y in pb.iterator(pairs):
         osidex = otherside31(x)
@@ -146,10 +164,63 @@ def remove_internal(pairs: Set[Tuple[str, str]], basns: Dict[Tuple[str, str], Se
         # if ip2as[x] < 0:
         if ip2as[x] < 0 or osidex == y or (osidex not in addrs and osidey not in addrs):
             if ip2as[x] not in basns[x, y] & aasns[x, y]:
+            # if not basns[x, y] & aasns[x, y]:
                 pairs2.add((x, y))
-                ba[x, y] = basns[x, y]
-                aa[x, y] = aasns[x, y]
-    return pairs2, ba, aa
+                ba[x].update(basns[x, y])
+                aa[x].update(aasns[x, y])
+    return pairs2, dict(ba), dict(aa)
+
+
+def findt(filename):
+    parser = Parser(filename, OutputType.warts, ip2as=ip2as)
+    for trace in parser:
+        parser.find_trips(trace)
+    return parser.trips
+
+
+def find_trips(filenames: List[str], poolsize: int):
+    trips = set()
+    pb = Progress(len(filenames), message='Finding Triplets', callback=lambda: '{:,d}'.format(len(trips)))
+    with Pool(poolsize) as pool:
+        for newtrips in pb.iterator(pool.imap_unordered(findt, filenames)):
+            trips.update(newtrips)
+    return trips
+
+
+def surrounding_asns(trips: Set[Tuple[int, str, int]], basns: DefaultDict[str, Set[int]], aasns: DefaultDict[str, Set[int]]):
+    basns2 = defaultdict(set, {k: set(v) for k, v in basns.items()})
+    aasns2 = defaultdict(set, {k: set(v) for k, v in aasns.items()})
+    iteration = 1
+    while True:
+        print('Iteration {:,d}'.format(iteration))
+        iteration += 1
+        for basn, addr, aasn in trips:
+            if basn in basns.get(addr, []):
+                aasns2[addr].add(aasn)
+            if aasn in aasns.get(addr, []):
+                basns2[addr].add(basn)
+        if basns2 == basns and aasns2 == aasns:
+            break
+        basns = defaultdict(set, {k: set(v) for k, v in basns2.items()})
+        aasns = defaultdict(set, {k: set(v) for k, v in aasns2.items()})
+    return basns2, aasns2
+
+
+def priors(filename, addrs, ip2as):
+    con = sqlite3.connect(filename)
+    prior = {a: set() for a in addrs}
+    after = {a: set() for a in prior}
+    pb = Progress(message='Reading adjs', increment=1000000)
+    for hop1, hop2, distance in pb.iterator(
+            con.execute('select hop1, hop2, distance from adjacency where hop1 != hop2')):
+        if distance == 1 and hop1 in after:
+            asn = ip2as[hop2]
+            after[hop1].add(asn)
+        if hop2 in prior:
+            asn = ip2as[hop1]
+            prior[hop2].add(asn)
+    con.close()
+    return prior, after
 
 
 def save_sql(filename, pairs, basns, aasns, replace=True):
@@ -165,8 +236,8 @@ def save_sql(filename, pairs, basns, aasns, replace=True):
     )''')
     values = []
     for x, y in pairs:
-        before = json.dumps(list(basns[x, y]))
-        after = json.dumps(list(aasns[x, y]))
+        before = json.dumps(list(basns[x]))
+        after = json.dumps(list(aasns[x]))
         values.append([x, y, before, after])
     con.executemany('INSERT INTO pairs (x, y, before, after) VALUES (?, ?, ?, ?)', values)
     con.commit()

@@ -17,4 +17,4 @@ class Hop:
         self.icmpext = icmpext
 
     def __repr__(self):
-        return 'Hop(Addr={}, ASN={}, TTL={}, QTTL={}, ICMPEXT={})'.format(self.addr, self.asn, self.ttl, self.qttl, bool(self.icmpext))
+        return 'Hop(Addr={}, ASN={}, TTL={}, QTTL={} ITYPE={}, ICMPEXT={})'.format(self.addr, self.asn, self.ttl, self.qttl, self.icmp_type, bool(self.icmpext))

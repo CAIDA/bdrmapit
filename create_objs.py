@@ -64,7 +64,7 @@ class CreateObjs:
                     j += 1
         self.g.finalize_routers()
 
-    def create_graph(self, adjs=None, increment=1000000, filename=None):
+    def create_graph(self, adjs=None, increment=1000000, filename=None, usespecial=True):
         if filename:
             self.con = sqlite3.connect(filename)
         if adjs is None:
@@ -77,7 +77,7 @@ class CreateObjs:
                 adist = 10
             else:
                 adist = 0
-            used += self.g.add_edge(x, y, dist + adist, icmp_type, special=special)
+            used += self.g.add_edge(x, y, dist + adist, icmp_type, special=(special and usespecial))
         self.g.finalize_edges()
 
     def destpairs(self, dps=None, increment=500000):
