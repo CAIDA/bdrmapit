@@ -1,10 +1,15 @@
 import json
 import os
+import socket
 import sqlite3
 from collections import Counter
-from typing import Set
+from itertools import groupby
+from operator import itemgetter
+from typing import Set, Tuple, Dict, Iterable, List
 
+from traceroute.abstract_trace import AbstractTrace
 from traceroute.atlas_trace import AtlasTrace
+from traceroute.hop import Hop
 from traceroute.output_type import OutputType
 from traceroute.warts import Warts
 from traceroute.warts_trace import WartsTrace
@@ -18,10 +23,26 @@ BOTH = 3
 NONE = 0
 ADJEXCLUDE = 1
 
+BFORWARD = 1
+BBACKWARD = 2
+DOUBLE = 3
+
 ADDR = 'address'
 ADJ = 'adjacency'
 DP = 'destpair'
 DIST = 'distance'
+
+pairs: Set[Tuple[str, str]] = None
+basns: Dict[str, Set[int]] = None
+aasns: Dict[str, Set[int]] = None
+marked: Set[str] = None
+
+
+def unique_justseen(iterable, key=None):
+    "List unique elements, preserving order. Remember only the element just seen."
+    # unique_justseen('AAAABBBCCDAABBB') --> A B C D A B
+    # unique_justseen('ABBCcAD', str.lower) --> A B C A D
+    return map(next, map(itemgetter(1), groupby(iterable, key)))
 
 
 def opendb(filename, remove=False):
@@ -30,13 +51,16 @@ def opendb(filename, remove=False):
             os.remove(filename)
         except FileNotFoundError:
             pass
-    con = sqlite3.connect(filename)
+    try:
+        con = sqlite3.connect(filename)
+    except sqlite3.OperationalError:
+        print(filename)
+        raise
     cur = con.cursor()
-    cur.execute('CREATE TABLE IF NOT EXISTS address (addr TEXT, num INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, distance INT, type INT, direction INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT, echo BOOLEAN, exclude INT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS address (addr TEXT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS adjacency (hop1 TEXT, hop2 TEXT, distance INT, type INT, special INT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS destpair (addr TEXT, asn INT)')
     cur.execute('CREATE TABLE IF NOT EXISTS distance (hop1 TEXT, hop2 TEXT, distance INT)')
-    cur.execute('CREATE TABLE IF NOT EXISTS seen (hop1 TEXT, hop2 TEXT, num INT)')
     cur.close()
     con.commit()
     return con
@@ -52,60 +76,122 @@ class Parser:
         self.adjs = set()
         self.dps = set()
         self.dists = Counter()
+        self.trips = set()
 
     def __iter__(self):
-        if self.output_type == OutputType.warts:
-            with Warts(self.filename, json=True) as f:
-                for j in f:
-                    if j['type'] == 'trace':
-                        yield WartsTrace(j, ip2as=self.ip2as)
-        elif self.output_type == OutputType.atlas:
-            with File2(self.filename) as f:
-                for j in map(json.loads, f):
-                    yield AtlasTrace(j, ip2as=self.ip2as)
+        if isinstance(self.filename, str):
+            if self.output_type == OutputType.warts:
+                with Warts(self.filename, json=True) as f:
+                    for j in f:
+                        if j['type'] == 'trace':
+                            yield WartsTrace(j, ip2as=self.ip2as)
+            elif self.output_type == OutputType.atlas:
+                with File2(self.filename) as f:
+                    for j in map(json.loads, f):
+                        yield AtlasTrace(j, ip2as=self.ip2as)
+        else:
+            for j in self.filename:
+                yield WartsTrace(j, ip2as=self.ip2as)
+
+    def compute_dist(self, x: Hop, y: Hop, z: Hop = None):
+        distance = y.ttl - x.ttl
+        if y.qttl == 0:
+            if z and (y.addr == z.addr or y.reply_ttl - z.reply_ttl == (z.ttl - y.ttl) - 1):
+                distance -= y.qttl - x.qttl
+        elif y.qttl > 1:
+            if y.icmp_type == 3 and y.qttl - x.qttl >= y.ttl - x.ttl:
+                distance -= y.qttl - x.qttl
+        if distance > 1:
+            distance = 2
+        elif distance < 1:
+            distance = -1
+        return distance
+
+    def parseone(self, trace):
+        self.addrs.update((h.addr,) for h in trace.allhops if not h.private)
+        numhops = len(trace.hops)
+        if numhops == 0:
+            return
+        dest_asn = trace.dst_asn
+        if dest_asn > 0:
+            self.dps.update((y.addr, dest_asn) for y in trace.hops if y.icmp_type != 0)
+        unique = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        vrfs = self.find_vrfs(unique=unique)
+        for i in range(numhops - 1):
+            x = trace.hops[i]
+            y = trace.hops[i+1]
+            z = trace.hops[i+2] if i < numhops - 2 else None
+            distance = self.compute_dist(x, y, z)
+            if x.addr in vrfs:
+                if y.addr in vrfs:
+                    special = DOUBLE
+                else:
+                    special = BBACKWARD
+            elif y.addr in vrfs:
+                special = BFORWARD
+            else:
+                special = NONE
+            self.adjs.add((x.addr, y.addr, distance, y.icmp_type, special))
+            self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
+
+    def prev(self, unique, i, addr):
+        for j in range(i - 1, -1, -1):
+            w = unique[j]
+            if w.addr != addr:
+                return w
+        return None
+
+    def find_vrfs(self, trace: AbstractTrace = None, unique: List[Hop] = None):
+        vrfs = set()
+        if unique is None:
+            unique = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        numhops = len(unique)
+        for i in range(numhops):
+            x = unique[i]
+            if x.addr in marked:
+                y = unique[i + 1] if i < numhops - 1 else None
+                w = self.prev(unique, i, x.addr)
+                z = None
+                for j in range(i + 2, numhops):
+                    z = unique[j]
+                    if z.addr != y.addr:
+                        break
+                if w and (w.addr, x.addr) in pairs:
+                    continue
+                if w and w.asn in aasns[x.addr]:
+                    continue
+                if z and z.asn in basns[x.addr]:
+                    continue
+                if (not w or (w.asn > 0 and w.asn not in basns[x.addr])) and (
+                        not z or (z.asn > 0 and z.asn in aasns[x.addr])):
+                    continue
+                vrfs.add(x.addr)
+        return vrfs
+
+    def find_trips(self, trace: AbstractTrace = None, unique: List[Hop] = None):
+        if unique is None:
+            unique = list(unique_justseen(trace.hops, key=lambda hop: hop.addr))
+        numhops = len(unique)
+        for i in range(1, numhops - 1):
+            x = unique[i]
+            if x.addr in marked:
+                w = unique[i - 1]
+                y = unique[i + 1]
+                if (x.addr, y.addr) in pairs or (w.addr, x.addr) in pairs:
+                    continue
+                if w.asn == 0 or y.asn == 0:
+                    continue
+                self.trips.add((w.asn, x.addr, y.asn))
 
     def parse(self):
         for trace in self:
-            self.addrs.update((h.addr, h.num) for h in trace.allhops if not h.private)
-            dest_asn = trace.dst_asn
-            numhops = len(trace.hops)
-            if numhops == 0:
-                continue
-            i = 0
-            y = trace.hops[0]
-            if not y.private:
-                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
-            while i < numhops - 1:
-                i += 1
-                x, y, z = y, trace.hops[i], (trace.hops[i + 1] if i < numhops - 1 else None)
-                distance = y.ttl - x.ttl
-                if y.qttl == 0:
-                    if z and (y.addr == z.addr or y.reply_ttl - z.reply_ttl == (z.ttl - y.ttl) - 1):
-                        distance -= y.qttl - x.qttl
-                elif y.qttl > 1:
-                    if y.icmp_type == 3 and y.qttl - x.qttl >= y.ttl - x.ttl:
-                        distance -= y.qttl - x.qttl
-                if distance > 1:
-                    distance = 2
-                elif distance < 1:
-                    distance = -1
-                # if y.ttl == z.ttl - 1:
-                #     yzdiff = y.num - z.num
-                #     if yzdiff == 1 or yzdiff == -1:
-                #         self.adjs.add((x.addr, z.addr, distance, z.icmp_type, BOTH))
-                #         self.adjs.add((y.addr, x.addr, distance, x.icmp_type, FORWARD))
-                #         self.adjs.add((y.addr, z.addr, distance, z.icmp_type, BACKWARD))
-                #         self.dps.add((y.addr, dest_asn, y.icmp_type == 0, ADJEXCLUDE))
-                #         self.dps.add((z.addr, dest_asn, z.icmp_type == 0, NONE))
-                #         self.dists[(x.addr, z.addr)] += 1 if distance == 1 else -1
-                #         self.dists[(y.addr, x.addr)] += 1 if distance == 1 else -1
-                #         self.dists[(y.addr, z.addr)] += 1 if distance == 1 else -1
-                #         y = z
-                #         i += 1
-                #         continue
-                self.adjs.add((x.addr, y.addr, distance, y.icmp_type, BOTH))
-                self.dps.add((y.addr, dest_asn, y.icmp_type == 0, NONE))
-                self.dists[(x.addr, y.addr)] += 1 if distance == 1 else -1
+            self.parseone(trace)
+
+    def reset(self):
+        self.addrs = set()
+        self.adjs = set()
+        self.dps = set()
+        self.dists = Counter()
 
     def to_sql(self, filename):
         con = opendb(filename, remove=True)
@@ -118,21 +204,21 @@ class Parser:
 
 def insert_address(con: sqlite3.Connection, addrs: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO address (addr, num) VALUES (?, ?)', addrs)
+    cur.executemany('INSERT INTO address (addr) VALUES (?)', addrs)
     cur.close()
     con.commit()
 
 
 def insert_adjacency(con: sqlite3.Connection, adjs: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO adjacency (hop1, hop2, distance, type, direction) VALUES (?, ?, ?, ?, ?)', adjs)
+    cur.executemany('INSERT INTO adjacency (hop1, hop2, distance, type, special) VALUES (?, ?, ?, ?, ?)', adjs)
     cur.close()
     con.commit()
 
 
 def insert_destpair(con: sqlite3.Connection, dps: Set):
     cur = con.cursor()
-    cur.executemany('INSERT INTO destpair (addr, asn, echo, exclude) VALUES (?, ?, ?, ?)', dps)
+    cur.executemany('INSERT INTO destpair (addr, asn) VALUES (?, ?)', dps)
     cur.close()
     con.commit()
 
@@ -142,3 +228,24 @@ def insert_distance(con: sqlite3.Connection, dists: Counter):
     cur.executemany('INSERT INTO distance (hop1, hop2, distance) VALUES (?, ?, ?)', ((x, y, n) for (x, y), n in dists.items()))
     cur.close()
     con.commit()
+
+
+def family(a):
+    if '.' in a:
+        return socket.AF_INET
+    else:
+        return socket.AF_INET6
+
+
+def addrdist(a1: str, a2: str):
+    fam1 = family(a1)
+    fam2 = family(a2)
+    try:
+        b1 = socket.inet_pton(fam1, a1)
+        i1 = int.from_bytes(b1, 'big')
+        b2 = socket.inet_pton(fam2, a2)
+        i2 = int.from_bytes(b2, 'big')
+    except OSError:
+        print(a1, a2)
+        raise
+    return abs(i1-i2)

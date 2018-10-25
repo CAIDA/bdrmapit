@@ -34,6 +34,7 @@ class RoutingTable(Radix):
                 except TypeError:
                     print(asn, prefix)
                     raise
+        rt.add_default()
         return rt
 
     def __init__(self):
@@ -47,8 +48,9 @@ class RoutingTable(Radix):
 
     def add_default(self):
         self.add_prefix(0, '0.0.0.0/0')
+        self.add_prefix(0, '::/0')
 
-    def add_ixp(self, str network=None, masklen=None, packed=None, remove=True):
+    def add_ixp(self, str network=None, masklen=None, packed=None, remove=True, ixpid=None, name=None):
         if remove:
             covered = self.search_covered(network, masklen) if network and masklen else self.search_covered(network)
             for node in covered:
@@ -56,7 +58,7 @@ class RoutingTable(Radix):
                     self.delete(node.prefix)
                 except KeyError:
                     pass
-        self.add_prefix(-1, network)
+        self.add_prefix(-100 - ixpid, network=network, masklen=masklen)
 
     def add_prefix(self, int asn, *args, **kwargs):
         node = self.add(*args, **kwargs)

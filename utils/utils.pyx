@@ -5,7 +5,7 @@ import logging
 import pickle
 import sys
 from itertools import filterfalse
-from socket import inet_ntoa, inet_aton
+from socket import inet_ntoa, inet_aton, socket
 from struct import pack, unpack
 from subprocess import Popen, PIPE
 

@@ -104,3 +104,4 @@ def annotate_lasthops(bdrmapit: Bdrmapit, routers: List[Router]=None):
         else:
             ds += 1
         bdrmapit.lhupdates.add_update(router, dest, bdrmapit.as2org[dest], utype)
+    bdrmapit.lhupdates.advance()
