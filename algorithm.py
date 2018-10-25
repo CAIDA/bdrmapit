@@ -52,34 +52,6 @@ def interface_changed(bdrmapit: Bdrmapit, iupdates: Updates, rchanged: Set[Route
         ichanged.update(i for i in bdrmapit.graph.iirelated[interface] if bdrmapit.graph.iedges.priority.get(i, 100) < 2)
 
 
-# def router_changed(bdrmapit: Bdrmapit, rupdates: Updates, rchanged: Set[Router], ichanged: Set[Interface]):
-#     for router in rupdates.changes:
-#         edges, rtype = get_edges(bdrmapit, router)
-#         for interface in edges:
-#             if bdrmapit.graph.iedges.priority.get(interface, float('inf')) < 2:
-#                 ichanged.add(interface)
-#             srouter = bdrmapit.graph.interface_router[interface]
-#             if srouter in bdrmapit.graph.redges:
-#                 rchanged.add(srouter)
-#         for interface in bdrmapit.graph.router_interfaces[router]:
-#             for pred in bdrmapit.graph.iedges[interface]:
-#                 if bdrmapit.graph.iedges.priority.get(pred, float('inf')) < 2:
-#                     ichanged.add(pred)
-#                 prouter = bdrmapit.graph.interface_router[pred]
-#                 if prouter in bdrmapit.graph.redges:
-#                     rchanged.add(prouter)
-# 
-# 
-# def interface_changed(bdrmapit: Bdrmapit, iupdates: Updates, rchanged: Set[Router], ichanged: Set[Interface]):
-#     for interface in iupdates.changes:
-#         for pred in bdrmapit.graph.iedges[interface]:
-#             if bdrmapit.graph.iedges.priority.get(pred, float('inf')) < 2:
-#                 ichanged.add(pred)
-#             prouter = bdrmapit.graph.interface_router[pred]
-#             if prouter in bdrmapit.graph.redges:
-#                 rchanged.add(prouter)
-
-
 def graph_refinement(bdrmapit: Bdrmapit, routers: List[Router], interfaces: List[Interface], iterations: int = -1,
                      previous_updates: List[Tuple[dict, dict]] = None, create_changed=False, rupdates: Updates = None,
                      iupdates: Updates = None, iteration=0) -> Tuple[Updates, Updates]:
@@ -184,16 +156,6 @@ def reallocated(bdrmapit: Bdrmapit, router: Router, edges: Set[Interface], rtype
                                     succs[newasn] = num
                                     succ_origins[newasn] = succ_origins[oasn]
                                     return REALLOCATED_PREFIX
-    # if len(edges) == 1 and len(bdrmapit.graph.router_interfaces[router]) > 1:
-    #     for s in edges:
-    #         sr = bdrmapit.graph.interface_router[s]
-    #         asn, org, _ = get(bdrmapit, sr, rupdates)
-    #         log.debug({asn}, bdrmapit.graph.modified_router_dests[router])
-    #         if {asn} == bdrmapit.graph.modified_router_dests[router]:
-    #             num = succs.pop(s.asn, 0)
-    #             succs[asn] = num
-    #             succ_origins[asn] = succ_origins[s.asn]
-    #             return REALLOCATED_PREFIX
     return 0
 
 

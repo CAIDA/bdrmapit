@@ -11,7 +11,7 @@ BOTH = 3
 
 class AbstractTrace:
 
-    def __init__(self, j, ip2as=None):
+    def __init__(self, j, ip2as=None, filename=None):
         self.j = j
         self.ip2as: RoutingTable = ip2as
         self.hops: List[Hop] = self._create_hopslist()
@@ -20,6 +20,7 @@ class AbstractTrace:
         self.prune_loops()
         self.remove_private()
         self.loop = False
+        self.filename = filename
 
     def __getitem__(self, item):
         return self.hops[item]
