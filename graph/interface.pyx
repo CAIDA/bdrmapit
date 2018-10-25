@@ -12,7 +12,7 @@ cdef class Interface(Router):
         self.asn = asn
         self.org = org
         self.rid = ''
-        if num > 0:
+        if num >= 0:
             self.num = num
         else:
             self.num = struct.unpack("!L", socket.inet_aton(self.address))[0]

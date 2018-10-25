@@ -8,6 +8,13 @@ class Warts:
         self.json = json
 
     def __enter__(self):
+        yield from self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def __iter__(self):
         ftype = self.filename.rpartition('.')[2]
         if ftype == 'gz':
             self.p = Popen('gunzip -c {} | sc_warts2json'.format(self.filename), shell=True, stdout=PIPE,
@@ -27,6 +34,5 @@ class Warts:
         else:
             yield from self.p.stdout
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def close(self):
         self.p.kill()
-        return False

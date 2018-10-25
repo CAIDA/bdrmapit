@@ -34,6 +34,7 @@ class WartsTrace(AbstractTrace):
                     hopslist.pop(-1)
                     continue
                 asn = self.ip2as[addr]
-                prev = Hop(addr, asn, ttl, hop['reply_ttl'], qttl=hop.get('icmp_q_ttl', 1), icmp_type=hop['icmp_type'])
+                icmpext = hop.get('icmpext')
+                prev = Hop(addr, asn, ttl, hop['reply_ttl'], qttl=hop.get('icmp_q_ttl', 1), icmp_type=hop['icmp_type'], icmpext=icmpext, rtt=hop['rtt'])
                 hopslist.append(prev)
         return hopslist

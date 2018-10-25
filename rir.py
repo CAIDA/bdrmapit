@@ -16,19 +16,29 @@ def rirparse(filename):
             splits = line.split('|')
             if len(splits) < 8:
                 continue
-            _, _, rtype, start, value, _, _, extensions = splits
+            _, _, rtype, start, value, _, allocated, extensions = splits
+            if allocated == 'available':
+                continue
             if not extensions:
                 continue
             if rtype == 'asn':
+                if allocated == 'reserved':
+                    continue
                 # asn = int(start)
                 asn = start
                 asns[extensions].add(asn)
-            elif rtype == 'ipv4':
-                asn = asns.get(extensions)
+            elif rtype == 'ipv4' or rtype == 'ipv6':
+                if allocated == 'reserved':
+                    # asn = {'-4'}
+                    continue
+                elif allocated == 'assigned' or allocated == 'allocated':
+                    asn = asns.get(extensions)
+                else:
+                    continue
                 if not asn:
                     continue
                 for network, prefixlen in prefixes_iter(start, int(value)):
-                    asn = asns[extensions]
+                    # asn = asns[extensions]
                     yield network, prefixlen, asn
 
 
@@ -44,12 +54,27 @@ def prefixlen_iter(num):
 
 
 def prefixes_iter(address, num):
-    ipnum = struct.unpack("!L", socket.inet_aton(address))[0]
+    if '.' in address:
+        fam = socket.AF_INET
+    else:
+        fam = socket.AF_INET6
+    b = socket.inet_pton(fam, address)
+    bitlen = len(b) * 8
+    ipnum = int.from_bytes(b, 'big')
     for bits in prefixlen_iter(num):
-        network = socket.inet_ntoa(struct.pack('!L', ipnum))
-        prefixlen = 32 - bits
+        network = socket.inet_ntop(fam, ipnum.to_bytes(len(b), 'big'))
+        prefixlen = bitlen - bits
         yield network, prefixlen
         ipnum += 2**bits
+
+
+# def prefixes_iter(address, num):
+#     ipnum = struct.unpack("!L", socket.inet_aton(address))[0]
+#     for bits in prefixlen_iter(num):
+#         network = socket.inet_ntoa(struct.pack('!L', ipnum))
+#         prefixlen = 32 - bits
+#         yield network, prefixlen
+#         ipnum += 2**bits
 
 
 def main():
