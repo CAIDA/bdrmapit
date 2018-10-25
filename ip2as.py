@@ -2,22 +2,20 @@
 import csv
 import re
 from argparse import ArgumentParser, FileType
-from typing import List
 
 import pandas as pd
 
 from as2org import AS2Org
 from bgp.bgp import BGP
 from bgp.routing_table import RoutingTable
-from rir import rirparse
-from utils.utils import read_filenames, max_num, File2
+from utils.utils import max_num, File2
 
 split = re.compile('[_,]')
 
 
-def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: str = None, bgp: BGP = None, as2org=None):
-    ixp_prefixes = pd.read_csv(ixp_prefixes, comment='#').iloc[:, 0] if ixp_prefixes is not None else []
-    ixp_asns = set(pd.read_csv(ixp_asns, comment='#').iloc[:, 0]) if ixp_asns else []
+def create_routing_table(prefixes, ixp_prefixes=None, rir: str = None, bgp: BGP = None, as2org=None):
+    ixp_prefixes = list(pd.read_csv(ixp_prefixes, comment='#').itertuples(index=False)) if ixp_prefixes is not None else []
+    ixp_asns = []
     rt = RoutingTable()
     bgp_ixp = []
     for address, prefixlen, asn in read_prefixes(prefixes, bgp=bgp, as2org=as2org):
@@ -38,12 +36,12 @@ def create_routing_table(prefixes, ixp_prefixes=None, ixp_asns=None, rir: str = 
                 rt.add_rir(prefix, prefixlen, asn)
     for address, prefixlen in bgp_ixp:
         rt.add_ixp(address, prefixlen)
-    for prefix in ixp_prefixes:
-        if prefix:
+    for row in ixp_prefixes:
+        if row.network:
             try:
-                rt.add_ixp(prefix)
+                rt.add_ixp(row.network, row.prefixlen, ixpid=row.id, name=row.name)
             except TypeError:
-                print('TypeError:', prefix)
+                print('TypeError:', row.prefix)
     rt.add_private()
     rt.add_multicast()
     rt.add_default()
@@ -110,7 +108,7 @@ def main():
     args = parser.parse_args()
     bgp = BGP(args.rels, args.cone)
     as2org = AS2Org(args.as2org, include_potaroo=False)
-    ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, ixp_asns=None, rir=args.rir, bgp=bgp, as2org=as2org)
+    ip2as = create_routing_table(args.prefixes, ixp_prefixes=args.ixp_prefixes, rir=args.rir, bgp=bgp, as2org=as2org)
     nodes = ip2as.nodes()
     writer = csv.writer(args.output)
     writer.writerow(['prefix', 'asn'])

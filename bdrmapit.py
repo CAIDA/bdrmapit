@@ -138,21 +138,21 @@ def run(row: Experiment):
     as2org = AS2Org(row.as2org, include_potaroo=False)
     ip2as = RoutingTable.ip2as(row.ip2as)
     graph = HybridGraph()
-    co = CreateObjs(row.db, graph, ip2as, as2org, bgp)
+    co = CreateObjs(graph, ip2as, as2org, bgp, filename=row.db)
     co.read_addresses()
-    if row.nodes:
+    if row.nodes and pd.notnull(row.nodes):
         co.alias_resolution(row.nodes)
     else:
         graph.router_interfaces.finalize()
     co.create_graph()
     co.destpairs()
     graph.set_routers_interfaces()
-    bdrmapit = Bdrmapit(graph, as2org, bgp, step=0)
+    bdrmapit = Bdrmapit(graph, as2org, bgp)
     lh.annotate_lasthops(bdrmapit, routers=graph.routers_nosucc)
-    rupdates, iupdates = alg.graph_refinement(bdrmapit, graph.routers_succ, graph.interfaces_pred, iterations=row.iterations)
+    rupdates, iupdates = alg.graph_refinement(bdrmapit, graph.routers_succ, graph.interfaces_pred, iterations=row.iterations, create_changed=True)
     con = opendb(row.output, remove=True)
     save_annotations(con, bdrmapit, rupdates, iupdates)
-    save_aslinks(con, bdrmapit, rupdates)
+    # save_aslinks(con, bdrmapit, rupdates)
     con.close()
 
 

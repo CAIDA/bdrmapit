@@ -54,6 +54,6 @@ class Progress:
         Progress.should_output = b
 
     @staticmethod
-    def message(message):
+    def message(*args, **kwargs):
         if Progress.should_output:
-            print(message)
+            print(*args, **kwargs)

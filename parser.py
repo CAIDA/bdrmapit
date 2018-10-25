@@ -1,10 +1,10 @@
 #!/usr/bin/env python
+import json
 import os
-import select
 import sqlite3
 import sys
 from argparse import ArgumentParser, FileType, Namespace
-from collections import Counter
+from collections import Counter, defaultdict
 from multiprocessing import Queue, Process, Lock, Pipe
 from multiprocessing.connection import wait
 from typing import List
@@ -174,8 +174,9 @@ def run(files, poolsize, no_combine):
                     dpq.put(None)
                     distq.put(None)
                 sys.stderr.write(
-                    '\r\033[KWorkers {:,d} Addrs {:,d} Adjs {:,d} DPs {:,d} Dists {:,d}'.format(completed, addrs, adjs,
-                                                                                                dps, dists))
+                    '\r\033[KWorkers {:,d} Addrs {:,d} Adjs {:,d} DPs {:,d} Dists {:,d}'.format(
+                        completed, addrs, adjs, dps, dists)
+                )
             else:
                 rlist.remove(reader)
         if len(rlist) == 1:
@@ -199,11 +200,24 @@ def main(vargs=None):
     parser.add_argument('-o', '--output-dir', default='.', help='Directory where the output files will be written.')
     parser.add_argument('-p', '--poolsize', default=1, type=int, help='Number of parallel processes.')
     parser.add_argument('-i', '--ip2as', required=True, help='BGP prefix file regex to use.')
+    parser.add_argument('-P', '--pairs', required=True)
     parser.add_argument('--no-combine', action='store_true', help='Prevent combining outputs.')
     if vargs:
         args = parser.parse_args(vargs)
     else:
         args = parser.parse_args()
+    tp.pairs = set()
+    tp.basns = defaultdict(set)
+    tp.aasns = defaultdict(set)
+    tp.marked = set()
+    con = sqlite3.connect(args.pairs)
+    for x, y, before, after in con.execute('select x, y, before, after from pairs'):
+        tp.pairs.add((x, y))
+        tp.basns[x].update(json.loads(before))
+        tp.aasns[x].update(json.loads(after))
+        tp.marked.add(x)
+    tp.basns = dict(tp.basns)
+    tp.aasns = dict(tp.aasns)
     files = []
     if args.single_warts:
         files.append((args.single_warts, OutputType.warts))
