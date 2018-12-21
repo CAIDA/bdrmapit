@@ -9,7 +9,7 @@ It is recommended to run <tt>bdrmapIT</tt> in its own environment, such as [Virt
 $ virtualenv bdrmapit  # Create the environment
 $ cd bdrmapit  # Enter the environment subdirectory
 $ source bin/activate  # Activate the environment
-$ pip install -r  ../requirememts.txt  # Install required packages
+$ pip install -r  ../requirements.txt  # Install required packages
 ```
 
 ### Anaconda
